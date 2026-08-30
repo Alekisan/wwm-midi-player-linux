@@ -30,13 +30,13 @@ ApplicationWindow {
         id: fileDialog
         title: qsTr("Choose a MIDI file")
         nameFilters: [qsTr("MIDI files (*.mid *.midi)"), qsTr("All files (*)")]
-        onAccepted: bridge.loadFile(selectedFile)
+        onAccepted: bridge.load_file(selectedFile)
     }
 
     FolderDialog {
         id: folderDialog
         title: qsTr("Choose a folder of MIDI files")
-        onAccepted: bridge.addFolder(selectedFolder)
+        onAccepted: bridge.add_folder(selectedFolder)
     }
 
     function formatTime(seconds) {
@@ -112,7 +112,7 @@ ApplicationWindow {
                 enabled: bridge.loaded
                 from: 0
                 to: Math.max(bridge.duration, 0.001)
-                onMoved: bridge.seekTo(value)
+                onMoved: bridge.seek_to(value)
 
                 Binding on value {
                     when: !timeline.pressed
@@ -135,7 +135,7 @@ ApplicationWindow {
                 text: bridge.playing && !bridge.paused ? qsTr("Pause") : qsTr("Play")
                 icon.name: bridge.playing && !bridge.paused ? "media-playback-pause" : "media-playback-start"
                 enabled: bridge.loaded
-                onClicked: bridge.togglePlayPause()
+                onClicked: bridge.toggle_play_pause()
             }
 
             Button {
@@ -156,7 +156,7 @@ ApplicationWindow {
                 to: 2.0
                 stepSize: 0.25
                 value: 1.0
-                onMoved: bridge.applySpeed(value)
+                onMoved: bridge.apply_speed(value)
             }
 
             Label {
@@ -171,7 +171,7 @@ ApplicationWindow {
             Layout.fillWidth: true
             Layout.preferredHeight: 56
             enabled: bridge.game_running
-            onClicked: bridge.goLive(!bridge.live)
+            onClicked: bridge.go_live(!bridge.live)
 
             background: Rectangle {
                 radius: 6
@@ -252,7 +252,7 @@ ApplicationWindow {
                     delegate: ItemDelegate {
                         width: playlist.width
                         highlighted: index === bridge.current_index
-                        onClicked: bridge.selectSong(index)
+                        onClicked: bridge.select_song(index)
 
                         contentItem: RowLayout {
                             spacing: 8
@@ -269,6 +269,14 @@ ApplicationWindow {
                                 text: modelData
                                 elide: Text.ElideMiddle
                                 Layout.fillWidth: true
+                            }
+
+                            ToolButton {
+                                icon.name: "edit-delete"
+                                onClicked: bridge.remove_song(index)
+
+                                ToolTip.visible: hovered
+                                ToolTip.text: qsTr("Remove from playlist")
                             }
                         }
                     }

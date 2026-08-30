@@ -61,6 +61,8 @@ pub mod qobject {
         #[qinvokable]
         fn select_song(self: Pin<&mut PlayerBridge>, index: i32);
         #[qinvokable]
+        fn remove_song(self: Pin<&mut PlayerBridge>, index: i32);
+        #[qinvokable]
         fn add_folder(self: Pin<&mut PlayerBridge>, path: &QString);
         #[qinvokable]
         fn poll(self: Pin<&mut PlayerBridge>);
@@ -322,6 +324,27 @@ impl qobject::PlayerBridge {
         let path = path.to_string();
         self.as_mut().set_current_index(index);
         self.as_mut().load_file(&QString::from(path.as_str()));
+    }
+
+    /// Remove the song at `index` from the playlist.
+    pub fn remove_song(mut self: Pin<&mut Self>, index: i32) {
+        let mut names: Vec<QString> = self.songs.iter().map(QString::clone).collect();
+        let mut paths: Vec<QString> = self.song_paths.iter().map(QString::clone).collect();
+        let i = index as usize;
+        if i < names.len() {
+            names.remove(i);
+            paths.remove(i);
+        }
+        self.as_mut().set_songs(QStringList::from_iter(names.iter()));
+        self.as_mut().set_song_paths(QStringList::from_iter(paths.iter()));
+
+        // Keep the "now playing" highlight correct after removal.
+        let current = self.current_index;
+        if i == current as usize {
+            self.as_mut().set_current_index(-1);
+        } else if i < current as usize {
+            self.as_mut().set_current_index(current - 1);
+        }
     }
 
     /// Add a folder to the playlist (one level deep, .mid/.midi files).
