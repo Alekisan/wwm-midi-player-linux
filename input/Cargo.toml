@@ -1,0 +1,11 @@
+[package]
+name = "wwm-input"
+description = "Virtual keyboard backed by Linux /dev/uinput (uinput virtual input device)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+wwm-engine = { path = "../engine" }
+evdev.workspace = true
+thiserror.workspace = true

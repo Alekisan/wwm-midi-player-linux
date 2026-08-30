@@ -162,10 +162,7 @@ pub fn parse(data: &[u8]) -> Result<Song, MidiError> {
     let transpose = detect_best_transpose(&events);
 
     // Initial tempo: the earliest tempo change, else default.
-    let tempo_us_per_qn = tempo_map
-        .changes
-        .first()
-        .map_or(500_000, |c| c.us_per_qn);
+    let tempo_us_per_qn = tempo_map.changes.first().map_or(500_000, |c| c.us_per_qn);
 
     Ok(Song {
         events,

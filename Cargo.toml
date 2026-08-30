@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["engine", "cli"]
+members = ["engine", "input", "cli"]
 
 [workspace.package]
 version = "0.1.0"
@@ -11,3 +11,4 @@ license = "MIT"
 midly = "0.5"
 thiserror = "2"
 clap = { version = "4", features = ["derive"] }
+evdev = "0.13"

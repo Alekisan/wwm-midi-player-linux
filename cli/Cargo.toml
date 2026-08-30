@@ -7,4 +7,9 @@ license.workspace = true
 
 [dependencies]
 wwm-engine = { path = "../engine" }
+wwm-input = { path = "../input" }
 clap.workspace = true
+
+[[bin]]
+name = "wwm"
+path = "src/main.rs"
