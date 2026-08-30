@@ -10,6 +10,9 @@ pub mod qobject {
     unsafe extern "C++" {
         include!("cxx-qt-lib/qstring.h");
         type QString = cxx_qt_lib::QString;
+
+        include!("cxx-qt-lib/qstringlist.h");
+        type QStringList = cxx_qt_lib::QStringList;
     }
 
     unsafe extern "RustQt" {
@@ -22,6 +25,10 @@ pub mod qobject {
         #[qproperty(bool, playing)]
         #[qproperty(bool, paused)]
         #[qproperty(bool, live)]
+        #[qproperty(bool, game_running)]
+        #[qproperty(QStringList, songs)]
+        #[qproperty(QStringList, song_paths)]
+        #[qproperty(i32, current_index)]
         #[qproperty(f64, speed)]
         #[qproperty(i32, note_count)]
         #[qproperty(i32, transpose)]
@@ -52,15 +59,43 @@ pub mod qobject {
         #[qinvokable]
         fn apply_speed(self: Pin<&mut PlayerBridge>, value: f64);
         #[qinvokable]
+        fn select_song(self: Pin<&mut PlayerBridge>, index: i32);
+        #[qinvokable]
+        fn add_folder(self: Pin<&mut PlayerBridge>, path: &QString);
+        #[qinvokable]
         fn poll(self: Pin<&mut PlayerBridge>);
     }
 }
 
 use core::pin::Pin;
-use cxx_qt_lib::QString;
+use cxx_qt_lib::{QString, QStringList};
+use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::Receiver;
+use std::sync::Arc;
+use std::time::Duration;
 use wwm_engine::midi::{load_file, NoteKind};
 use wwm_player::{Command, Player, PlayerEvent};
+
+/// Directories scanned for MIDI files, in addition to any folders the user adds.
+fn default_scan_dirs() -> Vec<std::path::PathBuf> {
+    let mut dirs = vec![
+        std::path::PathBuf::from(expand_home("~/Projects/test-midi-files")),
+        std::path::PathBuf::from(expand_home("~/Music")),
+    ];
+    // De-duplicate nonexistent dirs cheaply; scanning ignores missing paths.
+    dirs.dedup();
+    dirs
+}
+
+fn expand_home(path: &str) -> String {
+    if let Some(rest) = path.strip_prefix("~/") {
+        if let Some(home) = std::env::var_os("HOME") {
+            return format!("{}/{rest}", home.to_string_lossy());
+        }
+    }
+    path.to_string()
+}
 
 pub struct PlayerBridgeRust {
     file_name: QString,
@@ -70,6 +105,11 @@ pub struct PlayerBridgeRust {
     playing: bool,
     paused: bool,
     live: bool,
+    game_running: bool,
+    game_detected_flag: Arc<AtomicBool>,
+    songs: QStringList,
+    song_paths: QStringList,
+    current_index: i32,
     speed: f64,
     note_count: i32,
     transpose: i32,
@@ -82,6 +122,13 @@ pub struct PlayerBridgeRust {
 impl Default for PlayerBridgeRust {
     fn default() -> Self {
         let (player, events) = Player::spawn();
+        let (songs, song_paths) = scan_dirs(&default_scan_dirs());
+
+        // Watch for the game process in the background so the Go Live button
+        // can be enabled/disabled without blocking the GUI.
+        let game_detected_flag = Arc::new(AtomicBool::new(false));
+        spawn_game_watcher(Arc::clone(&game_detected_flag));
+
         Self {
             file_name: QString::from(""),
             status: QString::from("No file loaded"),
@@ -90,6 +137,11 @@ impl Default for PlayerBridgeRust {
             playing: false,
             paused: false,
             live: false,
+            game_running: false,
+            game_detected_flag,
+            songs,
+            song_paths,
+            current_index: -1,
             speed: 1.0,
             note_count: 0,
             transpose: 0,
@@ -99,6 +151,109 @@ impl Default for PlayerBridgeRust {
             events,
         }
     }
+}
+
+/// A game process has been detected when any of these substrings appear in the
+/// command name or command line (case-insensitive).
+const GAME_KEYWORDS: &[&str] = &["wwm", "where winds meet", "winds meet"];
+
+/// The Go Live button's three visual states.
+#[cfg_attr(test, derive(Debug, PartialEq, Eq))]
+pub enum LiveColor {
+    Gray,
+    Green,
+    Red,
+}
+
+/// Color of the Go Live button given game-detection and live state.
+pub fn live_button_color(game_running: bool, live: bool) -> LiveColor {
+    if !game_running {
+        LiveColor::Gray
+    } else if live {
+        LiveColor::Red
+    } else {
+        LiveColor::Green
+    }
+}
+
+/// The Go Live button is only interactive while the game is running.
+pub fn live_button_enabled(game_running: bool) -> bool {
+    game_running
+}
+
+/// Remove a leading `file://` URL scheme, returning a plain path.
+pub fn strip_file_url(path: &str) -> &str {
+    path.strip_prefix("file://").unwrap_or(path)
+}
+
+fn detect_game() -> bool {
+    detect_game_at(Path::new("/proc"))
+}
+
+fn detect_game_at(proc: &Path) -> bool {
+    let Ok(entries) = std::fs::read_dir(proc) else {
+        return false;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else { continue };
+        if !name.bytes().all(|b| b.is_ascii_digit()) {
+            continue;
+        }
+        let cmdline = entry.path().join("cmdline");
+        let Ok(bytes) = std::fs::read(&cmdline) else { continue };
+        let cmdline = String::from_utf8_lossy(&bytes).to_lowercase();
+        for keyword in GAME_KEYWORDS {
+            if cmdline.contains(keyword) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+fn spawn_game_watcher(detected: Arc<AtomicBool>) {
+    std::thread::Builder::new()
+        .name("wwm-game-watch".into())
+        .spawn(move || loop {
+            detected.store(detect_game(), Ordering::Relaxed);
+            std::thread::sleep(Duration::from_secs(2));
+        })
+        .expect("failed to spawn game watcher");
+}
+
+/// Scan directories (one level deep) for `.mid` / `.midi` files.
+fn scan_dirs(dirs: &[std::path::PathBuf]) -> (QStringList, QStringList) {
+    let mut names: Vec<(String, String)> = Vec::new();
+    for dir in dirs {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let is_midi = path
+                .extension()
+                .and_then(|e| e.to_str())
+                .map(|e| matches!(e.to_ascii_lowercase().as_str(), "mid" | "midi"))
+                .unwrap_or(false);
+            if !is_midi {
+                continue;
+            }
+            let name = path
+                .file_stem()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_default();
+            names.push((name, path.to_string_lossy().to_string()));
+        }
+    }
+    names.sort_by(|a, b| a.0.to_lowercase().cmp(&b.0.to_lowercase()));
+
+    let names_list: Vec<QString> = names.iter().map(|(n, _)| QString::from(n.as_str())).collect();
+    let paths_list: Vec<QString> = names.iter().map(|(_, p)| QString::from(p.as_str())).collect();
+    (
+        QStringList::from_iter(names_list.iter()),
+        QStringList::from_iter(paths_list.iter()),
+    )
 }
 
 impl qobject::PlayerBridge {
@@ -139,6 +294,26 @@ impl qobject::PlayerBridge {
                     .set_status(QString::from(format!("Error: {e}").as_str()));
             }
         }
+    }
+
+    /// Load the song at `index` in the playlist.
+    pub fn select_song(mut self: Pin<&mut Self>, index: i32) {
+        let Some(path) = self.song_paths.get(index as isize) else {
+            return;
+        };
+        let path = path.to_string();
+        self.as_mut().set_current_index(index);
+        self.as_mut().load_file(&QString::from(path.as_str()));
+    }
+
+    /// Add a folder to the playlist (one level deep, .mid/.midi files).
+    pub fn add_folder(mut self: Pin<&mut Self>, path: &QString) {
+        let raw = path.to_string();
+        let path_str = raw.strip_prefix("file://").unwrap_or(&raw).to_string();
+        let (songs, song_paths) = scan_dirs(&[std::path::PathBuf::from(path_str)]);
+        self.as_mut().set_songs(songs);
+        self.as_mut().set_song_paths(song_paths);
+        self.as_mut().set_current_index(-1);
     }
 
     pub fn play(self: Pin<&mut Self>) {
@@ -226,5 +401,46 @@ impl qobject::PlayerBridge {
         if self.live != live {
             self.as_mut().set_live(live);
         }
+
+        // Mirror game detection.
+        let detected = self.game_detected_flag.load(Ordering::Relaxed);
+        if self.game_running != detected {
+            self.as_mut().set_game_running(detected);
+        }
+
+        // Can't inject into a game that isn't running — drop live if the game
+        // went away while we were live.
+        if !detected && live {
+            self.player.set_live(false);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{live_button_color, live_button_enabled, strip_file_url, LiveColor};
+
+    #[test]
+    fn live_button_color_is_gray_without_game() {
+        assert_eq!(live_button_color(false, false), LiveColor::Gray);
+        assert_eq!(live_button_color(false, true), LiveColor::Gray);
+    }
+
+    #[test]
+    fn live_button_color_reflects_state_when_game_running() {
+        assert_eq!(live_button_color(true, false), LiveColor::Green);
+        assert_eq!(live_button_color(true, true), LiveColor::Red);
+    }
+
+    #[test]
+    fn live_button_enabled_only_when_game_running() {
+        assert!(!live_button_enabled(false));
+        assert!(live_button_enabled(true));
+    }
+
+    #[test]
+    fn strips_file_url_scheme() {
+        assert_eq!(strip_file_url("file:///home/x/a.mid"), "/home/x/a.mid");
+        assert_eq!(strip_file_url("/home/x/a.mid"), "/home/x/a.mid");
     }
 }

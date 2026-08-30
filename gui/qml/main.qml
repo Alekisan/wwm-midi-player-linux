@@ -7,10 +7,10 @@ import com.wwm.player
 ApplicationWindow {
     id: window
 
-    width: 760
-    height: 680
-    minimumWidth: 620
-    minimumHeight: 600
+    width: 820
+    height: 640
+    minimumWidth: 640
+    minimumHeight: 560
     visible: true
     title: qsTr("Where Winds Meet — MIDI Player")
 
@@ -33,6 +33,12 @@ ApplicationWindow {
         onAccepted: bridge.loadFile(selectedFile)
     }
 
+    FolderDialog {
+        id: folderDialog
+        title: qsTr("Choose a folder of MIDI files")
+        onAccepted: bridge.addFolder(selectedFolder)
+    }
+
     function formatTime(seconds) {
         if (isNaN(seconds) || seconds < 0)
             seconds = 0;
@@ -45,9 +51,9 @@ ApplicationWindow {
     ColumnLayout {
         anchors.fill: parent
         anchors.margins: 16
-        spacing: 14
+        spacing: 12
 
-        // ---- File ----------------------------------------------------
+        // ---- File -----------------------------------------------------
         RowLayout {
             Layout.fillWidth: true
             spacing: 10
@@ -66,29 +72,31 @@ ApplicationWindow {
             }
         }
 
-        // ---- Song info ----------------------------------------------
+        // ---- Song info ------------------------------------------------
         Frame {
             Layout.fillWidth: true
 
             GridLayout {
                 anchors.fill: parent
                 columns: 4
-                columnSpacing: 20
+                columnSpacing: 6
                 rowSpacing: 4
 
-                Label { text: qsTr("Notes:"); opacity: 0.7 }
-                Label { text: bridge.noteCount }
-                Label { text: qsTr("Tempo:"); opacity: 0.7 }
-                Label { text: bridge.bpm + qsTr(" BPM") }
+                // Label / value pairs: labels right-aligned in a fixed column,
+                // values stretch, so the four pairs line up evenly.
+                Label { text: qsTr("Notes:"); opacity: 0.7; horizontalAlignment: Text.AlignRight }
+                Label { text: bridge.noteCount; Layout.fillWidth: true }
+                Label { text: qsTr("Tempo:"); opacity: 0.7; horizontalAlignment: Text.AlignRight }
+                Label { text: bridge.bpm + qsTr(" BPM"); Layout.fillWidth: true }
 
-                Label { text: qsTr("Length:"); opacity: 0.7 }
-                Label { text: window.formatTime(bridge.duration) }
-                Label { text: qsTr("Transpose:"); opacity: 0.7 }
-                Label { text: (bridge.transpose > 0 ? "+" : "") + bridge.transpose + qsTr(" semitones") }
+                Label { text: qsTr("Length:"); opacity: 0.7; horizontalAlignment: Text.AlignRight }
+                Label { text: window.formatTime(bridge.duration); Layout.fillWidth: true }
+                Label { text: qsTr("Transpose:"); opacity: 0.7; horizontalAlignment: Text.AlignRight }
+                Label { text: (bridge.transpose > 0 ? "+" : "") + bridge.transpose + qsTr(" semitones"); Layout.fillWidth: true }
             }
         }
 
-        // ---- Timeline ------------------------------------------------
+        // ---- Timeline -------------------------------------------------
         RowLayout {
             Layout.fillWidth: true
             spacing: 10
@@ -118,7 +126,7 @@ ApplicationWindow {
             }
         }
 
-        // ---- Transport -----------------------------------------------
+        // ---- Transport ------------------------------------------------
         RowLayout {
             Layout.fillWidth: true
             spacing: 10
@@ -143,10 +151,10 @@ ApplicationWindow {
 
             Slider {
                 id: speedSlider
-                Layout.preferredWidth: 160
+                Layout.preferredWidth: 170
                 from: 0.25
                 to: 2.0
-                stepSize: 0.05
+                stepSize: 0.25
                 value: 1.0
                 onMoved: bridge.applySpeed(value)
             }
@@ -157,156 +165,130 @@ ApplicationWindow {
             }
         }
 
-        // ---- Go Live -------------------------------------------------
+        // ---- Go Live --------------------------------------------------
         Button {
             id: liveButton
             Layout.fillWidth: true
-            Layout.preferredHeight: 58
+            Layout.preferredHeight: 56
+            enabled: bridge.gameRunning
             onClicked: bridge.goLive(!bridge.live)
 
             background: Rectangle {
                 radius: 6
-                color: bridge.live
-                    ? (liveButton.pressed ? "#a5281b" : "#c0392b")
-                    : (liveButton.pressed ? "#1e8449" : "#27ae60")
+                color: {
+                    if (!liveButton.enabled)
+                        return Qt.rgba(0.5, 0.5, 0.5, 0.25);
+                    if (bridge.live)
+                        return liveButton.pressed ? "#a5281b" : "#c0392b";
+                    return liveButton.pressed ? "#1e8449" : "#27ae60";
+                }
                 border.color: Qt.darker(color, 1.3)
                 border.width: 1
             }
 
             contentItem: ColumnLayout {
                 spacing: 1
+
                 Label {
                     Layout.alignment: Qt.AlignHCenter
                     text: bridge.live ? qsTr("● LIVE") : qsTr("GO LIVE")
-                    color: "white"
+                    color: liveButton.enabled ? "white" : palette.text
+                    opacity: liveButton.enabled ? 1.0 : 0.5
                     font.bold: true
                     font.pointSize: 13
                 }
                 Label {
                     Layout.alignment: Qt.AlignHCenter
-                    text: bridge.live
-                        ? qsTr("Input is being sent to the game — click to stop")
-                        : qsTr("Click to start sending input to the game")
-                    color: "white"
-                    opacity: 0.9
+                    text: {
+                        if (!bridge.gameRunning)
+                            return qsTr("Waiting for the game…");
+                        if (bridge.live)
+                            return qsTr("Input is being sent to the game — click to stop");
+                        return qsTr("Click to start sending input to the game");
+                    }
+                    color: liveButton.enabled ? "white" : palette.text
+                    opacity: liveButton.enabled ? 0.9 : 0.5
                     font.pointSize: 9
                 }
             }
         }
 
-        // ---- Key visualizer ------------------------------------------
+        // ---- Playlist -------------------------------------------------
         Frame {
             Layout.fillWidth: true
             Layout.fillHeight: true
 
             ColumnLayout {
                 anchors.fill: parent
-                spacing: 8
+                spacing: 6
 
-                Label {
-                    text: qsTr("Keys")
-                    opacity: 0.7
+                RowLayout {
+                    Layout.fillWidth: true
+
+                    Label {
+                        text: qsTr("Playlist")
+                        font.bold: true
+                    }
+
+                    Item { Layout.fillWidth: true }
+
+                    Button {
+                        text: qsTr("Add folder…")
+                        icon.name: "folder-open"
+                        flat: true
+                        onClicked: folderDialog.open()
+                    }
                 }
 
-                GridLayout {
-                    id: keyGrid
-                    Layout.alignment: Qt.AlignHCenter
-                    columns: 7
-                    columnSpacing: 6
-                    rowSpacing: 6
+                ListView {
+                    id: playlist
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    clip: true
+                    model: bridge.songs
 
-                    // High row (q–u), mid row (a–j), low row (z–m).
-                    readonly property var keys: ["q", "w", "e", "r", "t", "y", "u",
-                                                 "a", "s", "d", "f", "g", "h", "j",
-                                                 "z", "x", "c", "v", "b", "n", "m"]
+                    ScrollBar.vertical: ScrollBar {}
 
-                    Repeater {
-                        id: keyRepeater
-                        model: keyGrid.keys
+                    delegate: ItemDelegate {
+                        width: playlist.width
+                        highlighted: index === bridge.currentIndex
+                        onClicked: bridge.selectSong(index)
 
-                        delegate: Rectangle {
-                            id: keyCell
+                        contentItem: RowLayout {
+                            spacing: 8
 
-                            property bool lit: false
-                            property string modifier: ""
-
-                            function flash(chord) {
-                                var parts = chord.split("+");
-                                keyCell.modifier = parts.length > 1 ? parts[0] : "";
-                                keyCell.lit = true;
-                                offTimer.restart();
+                            Label {
+                                text: index + 1
+                                opacity: 0.5
+                                font.family: "monospace"
+                                Layout.preferredWidth: 28
+                                horizontalAlignment: Text.AlignRight
                             }
 
-                            implicitWidth: 62
-                            implicitHeight: 52
-                            radius: 5
-                            color: lit
-                                ? (modifier === "shift" ? "#2980b9"
-                                    : modifier === "ctrl" ? "#8e44ad" : "#16a085")
-                                : Qt.rgba(0.5, 0.5, 0.5, 0.15)
-                            border.width: 1
-                            border.color: Qt.rgba(0.5, 0.5, 0.5, 0.35)
-
-                            Behavior on color {
-                                ColorAnimation { duration: 90 }
-                            }
-
-                            ColumnLayout {
-                                anchors.centerIn: parent
-                                spacing: 0
-
-                                Label {
-                                    Layout.alignment: Qt.AlignHCenter
-                                    text: modelData.toUpperCase()
-                                    font.bold: true
-                                    font.pointSize: 13
-                                    color: keyCell.lit ? "white" : palette.text
-                                }
-                                Label {
-                                    Layout.alignment: Qt.AlignHCenter
-                                    text: keyCell.lit ? keyCell.modifier : ""
-                                    visible: keyCell.lit && keyCell.modifier !== ""
-                                    color: "white"
-                                    font.pointSize: 8
-                                }
-                            }
-
-                            Timer {
-                                id: offTimer
-                                interval: 140
-                                onTriggered: {
-                                    keyCell.lit = false;
-                                    keyCell.modifier = "";
-                                }
+                            Label {
+                                text: modelData
+                                elide: Text.ElideMiddle
+                                Layout.fillWidth: true
                             }
                         }
                     }
                 }
 
-                Item { Layout.fillHeight: true }
+                Label {
+                    visible: bridge.songs.length === 0
+                    text: qsTr("No MIDI files yet — use “Load MIDI…” or “Add folder…”")
+                    opacity: 0.6
+                    Layout.alignment: Qt.AlignHCenter
+                }
             }
         }
 
-        // ---- Status --------------------------------------------------
+        // ---- Status ---------------------------------------------------
         Label {
             Layout.fillWidth: true
             text: bridge.status
             elide: Text.ElideRight
             opacity: 0.8
-        }
-    }
-
-    Connections {
-        target: bridge
-
-        function onNoteFired(note, chord) {
-            var base = chord.split("+").pop();
-            var index = keyGrid.keys.indexOf(base);
-            if (index >= 0) {
-                var item = keyRepeater.itemAt(index);
-                if (item)
-                    item.flash(chord);
-            }
         }
     }
 }
