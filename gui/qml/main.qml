@@ -145,6 +145,33 @@ ApplicationWindow {
                 onClicked: bridge.stop()
             }
 
+            CheckBox {
+                id: previewToggle
+                text: qsTr("Preview")
+                checked: bridge.preview
+                onToggled: bridge.toggle_preview(checked)
+
+                ToolTip.visible: hovered
+                ToolTip.text: qsTr("Play audio locally")
+            }
+
+            ComboBox {
+                id: instrumentPicker
+                model: [
+                    "Guqin (古琴)",
+                    "Pipa (琵琶)",
+                    "Erhu (二胡)",
+                    "Konghou (箜篌)",
+                    "Fangxiang (方響)",
+                ]
+                currentIndex: bridge.instrument
+                enabled: previewToggle.checked
+                onActivated: bridge.choose_instrument(index)
+
+                ToolTip.visible: hovered
+                ToolTip.text: qsTr("Preview instrument")
+            }
+
             Item { Layout.fillWidth: true }
 
             Label { text: qsTr("Speed:"); opacity: 0.7 }

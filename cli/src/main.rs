@@ -268,7 +268,10 @@ async fn cmd_play(
                         break;
                     }
                 }
-                PlayerEvent::Loaded { .. } | PlayerEvent::Position(_) => {}
+                PlayerEvent::Loaded { .. }
+                | PlayerEvent::Position(_)
+                | PlayerEvent::Preview(_)
+                | PlayerEvent::Instrument(_) => {}
             }
         }
     });

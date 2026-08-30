@@ -25,6 +25,8 @@ pub mod qobject {
         #[qproperty(bool, playing)]
         #[qproperty(bool, paused)]
         #[qproperty(bool, live)]
+        #[qproperty(bool, preview)]
+        #[qproperty(i32, instrument)]
         #[qproperty(bool, game_running)]
         #[qproperty(QStringList, songs)]
         #[qproperty(QStringList, song_paths)]
@@ -57,6 +59,10 @@ pub mod qobject {
         #[qinvokable]
         fn go_live(self: Pin<&mut PlayerBridge>, on: bool);
         #[qinvokable]
+        fn toggle_preview(self: Pin<&mut PlayerBridge>, on: bool);
+        #[qinvokable]
+        fn choose_instrument(self: Pin<&mut PlayerBridge>, index: i32);
+        #[qinvokable]
         fn apply_speed(self: Pin<&mut PlayerBridge>, value: f64);
         #[qinvokable]
         fn select_song(self: Pin<&mut PlayerBridge>, index: i32);
@@ -77,7 +83,7 @@ use std::sync::mpsc::Receiver;
 use std::sync::Arc;
 use std::time::Duration;
 use wwm_engine::midi::{load_file, NoteKind};
-use wwm_player::{Command, Player, PlayerEvent};
+use wwm_player::{Command, Instrument, Player, PlayerEvent};
 
 /// Directories scanned for MIDI files, in addition to any folders the user adds.
 fn default_scan_dirs() -> Vec<std::path::PathBuf> {
@@ -107,6 +113,8 @@ pub struct PlayerBridgeRust {
     playing: bool,
     paused: bool,
     live: bool,
+    preview: bool,
+    instrument: i32,
     game_running: bool,
     game_detected_flag: Arc<AtomicBool>,
     songs: QStringList,
@@ -139,6 +147,8 @@ impl Default for PlayerBridgeRust {
             playing: false,
             paused: false,
             live: false,
+            preview: true,
+            instrument: 0,
             game_running: false,
             game_detected_flag,
             songs,
@@ -335,8 +345,10 @@ impl qobject::PlayerBridge {
             names.remove(i);
             paths.remove(i);
         }
-        self.as_mut().set_songs(QStringList::from_iter(names.iter()));
-        self.as_mut().set_song_paths(QStringList::from_iter(paths.iter()));
+        self.as_mut()
+            .set_songs(QStringList::from_iter(names.iter()));
+        self.as_mut()
+            .set_song_paths(QStringList::from_iter(paths.iter()));
 
         // Keep the "now playing" highlight correct after removal.
         let current = self.current_index;
@@ -382,6 +394,22 @@ impl qobject::PlayerBridge {
         self.player.set_live(on);
     }
 
+    /// Toggle local audio preview.
+    pub fn toggle_preview(mut self: Pin<&mut Self>, on: bool) {
+        self.player.set_preview(on);
+        self.as_mut().set_preview(on);
+    }
+
+    /// Switch the preview instrument by index (matches Instrument::ALL order).
+    pub fn choose_instrument(mut self: Pin<&mut Self>, index: i32) {
+        let inst = Instrument::ALL
+            .get(index as usize)
+            .copied()
+            .unwrap_or(Instrument::Guqin);
+        self.player.set_instrument(inst);
+        self.as_mut().set_instrument(index);
+    }
+
     pub fn apply_speed(mut self: Pin<&mut Self>, value: f64) {
         self.player.send(Command::SetSpeed(value));
         self.as_mut().set_speed(value);
@@ -419,6 +447,7 @@ impl qobject::PlayerBridge {
                     self.as_mut()
                         .set_status(QString::from(format!("Error: {e}").as_str()));
                 }
+                PlayerEvent::Preview(_) | PlayerEvent::Instrument(_) => {}
                 PlayerEvent::Loaded { .. } | PlayerEvent::Position(_) => {}
             }
         }

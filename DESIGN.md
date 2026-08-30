@@ -28,6 +28,19 @@ Game detection is a soft, background watcher. It never gates application
 startup, UI rendering, or MIDI playback. It only informs whether input injection
 is possible.
 
+## Audio preview (local playback)
+
+The player also offers a **local audio preview** so a song can be heard without
+the game. Per `INSTRUMENT_PREVIEW_SPEC.md`, the user picks which of the five
+in-game instruments the preview uses (Guqin, Pipa, Erhu, Konghou, Fangxiang) so
+it matches what playback will sound like in the game. It is implemented in the
+decoupled `preview_synth` crate using `rustysynth` (SoundFont synthesis) +
+`rodio` (output), on a dedicated background thread, driven by `AudioCommand`
+messages — fully independent of the `/dev/uinput` input driver. SoundFonts live
+in `~/.local/share/where-winds-meet-player/soundfonts/` (instrument-specific
+`.sf2` first, then a GM fallback); a missing SoundFont mutes the preview with a
+status note instead of crashing.
+
 ### Input injection states
 
 1. **Game not detected.** Fully functional: load MIDI, play, seek, visualize

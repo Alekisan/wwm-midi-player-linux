@@ -1,0 +1,11 @@
+[package]
+name = "wwm-preview-synth"
+description = "In-app audio preview: rustysynth SoundFont synthesis + rodio output, decoupled from the input driver"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+rustysynth.workspace = true
+rodio.workspace = true
+thiserror.workspace = true

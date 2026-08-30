@@ -8,3 +8,4 @@ license.workspace = true
 [dependencies]
 wwm-engine = { path = "../engine" }
 wwm-input = { path = "../input" }
+wwm-preview-synth = { path = "../preview_synth" }

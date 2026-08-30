@@ -8,6 +8,7 @@ license.workspace = true
 [dependencies]
 wwm-engine = { path = "../engine" }
 wwm-player = { path = "../player" }
+wwm-preview-synth = { path = "../preview_synth" }
 cxx.workspace = true
 cxx-qt.workspace = true
 cxx-qt-lib = { workspace = true, features = ["qt_gui", "qt_qml", "qt_quickcontrols"] }

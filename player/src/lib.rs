@@ -20,6 +20,8 @@ use wwm_engine::mapping::{map_note, KeyChord, NoteMode};
 use wwm_engine::midi::{NoteKind, Song};
 use wwm_input::VirtualKeyboard;
 
+pub use wwm_preview_synth::Instrument;
+
 /// How long the timing thread may sleep before re-checking for commands.
 /// Bounds worst-case note lateness.
 const MAX_SLEEP: Duration = Duration::from_micros(2_000);
@@ -32,6 +34,7 @@ pub struct PlayerState {
     playing: AtomicBool,
     paused: AtomicBool,
     live: AtomicBool,
+    preview: AtomicBool,
     position_ms: AtomicU64,
     duration_ms: AtomicU64,
 }
@@ -50,6 +53,11 @@ impl PlayerState {
     /// Input injection to the game is enabled.
     pub fn is_live(&self) -> bool {
         self.live.load(Ordering::SeqCst)
+    }
+
+    /// Local audio preview is enabled.
+    pub fn is_preview(&self) -> bool {
+        self.preview.load(Ordering::SeqCst)
     }
 
     /// Current playback position, in seconds.
@@ -85,6 +93,10 @@ pub enum Command {
     SetHold(Duration),
     /// Enable/disable input injection ("Go Live").
     SetLive(bool),
+    /// Enable/disable local audio preview.
+    SetPreview(bool),
+    /// Switch the preview instrument.
+    SetInstrument(Instrument),
     Shutdown,
 }
 
@@ -110,6 +122,10 @@ pub enum PlayerEvent {
     Position(f64),
     /// "Go Live" state changed.
     Live(bool),
+    /// Audio preview state changed.
+    Preview(bool),
+    /// Preview instrument changed.
+    Instrument(Instrument),
     /// Non-fatal error (e.g. uinput unavailable when going live).
     Error(String),
 }
@@ -135,6 +151,7 @@ impl Player {
                 Worker {
                     song: None,
                     keyboard: None,
+                    preview: wwm_preview_synth::Preview::spawn().0,
                     state: worker_state,
                     events: evt_tx,
                     commands: cmd_rx,
@@ -145,6 +162,7 @@ impl Player {
                     mode: NoteMode::Closest,
                     transpose_override: None,
                     hold: Duration::ZERO,
+                    instrument: Instrument::Guqin,
                     last_position_emit: Instant::now(),
                 }
                 .run();
@@ -197,6 +215,12 @@ impl Player {
     pub fn set_live(&self, live: bool) {
         self.send(Command::SetLive(live));
     }
+    pub fn set_preview(&self, preview: bool) {
+        self.send(Command::SetPreview(preview));
+    }
+    pub fn set_instrument(&self, instrument: Instrument) {
+        self.send(Command::SetInstrument(instrument));
+    }
 }
 
 impl Drop for Player {
@@ -211,6 +235,7 @@ impl Drop for Player {
 struct Worker {
     song: Option<Song>,
     keyboard: Option<VirtualKeyboard>,
+    preview: wwm_preview_synth::Preview,
     state: Arc<PlayerState>,
     events: Sender<PlayerEvent>,
     commands: Receiver<Command>,
@@ -221,6 +246,7 @@ struct Worker {
     mode: NoteMode,
     transpose_override: Option<i32>,
     hold: Duration,
+    instrument: Instrument,
     last_position_emit: Instant,
 }
 
@@ -320,6 +346,18 @@ impl Worker {
                 }
             }
             Command::SetLive(live) => self.set_live(live),
+            Command::SetPreview(preview) => {
+                self.state.preview.store(preview, Ordering::SeqCst);
+                if !preview {
+                    self.preview.all_notes_off();
+                }
+                self.emit(PlayerEvent::Preview(preview));
+            }
+            Command::SetInstrument(instrument) => {
+                self.instrument = instrument;
+                self.preview.set_instrument(instrument);
+                self.emit(PlayerEvent::Instrument(instrument));
+            }
             Command::Shutdown => return false,
         }
         true
@@ -380,6 +418,7 @@ impl Worker {
             .store(position.max(0.0) as u64, Ordering::SeqCst);
         self.state.paused.store(true, Ordering::SeqCst);
         self.release_keys();
+        self.preview.all_notes_off();
         self.emit(PlayerEvent::Paused);
     }
 
@@ -400,6 +439,7 @@ impl Worker {
         self.state.position_ms.store(0, Ordering::SeqCst);
         self.index = 0;
         self.release_keys();
+        self.preview.all_notes_off();
         if notify && was_playing {
             self.emit(PlayerEvent::Stopped);
         }
@@ -415,6 +455,7 @@ impl Worker {
         self.anchor_song_ms = target_ms as f64;
         self.anchor = Instant::now();
         self.release_keys();
+        self.preview.all_notes_off();
     }
 
     /// Song-time position implied by the wall clock since the last anchor.
@@ -442,6 +483,7 @@ impl Worker {
             let transpose = self.transpose_override.unwrap_or(song.transpose);
             let mode = self.mode;
             let live = self.state.live.load(Ordering::SeqCst);
+            let preview = self.state.preview.load(Ordering::SeqCst);
 
             while self.index < song.events.len() {
                 let event = song.events[self.index];
@@ -449,6 +491,16 @@ impl Worker {
                     break;
                 }
                 self.index += 1;
+
+                // Audio preview is a simple note-on/note-off following the MIDI
+                // velocity so it sounds like the piece, independent of the
+                // game's "tap on note-on" key behavior.
+                if preview {
+                    match event.kind {
+                        NoteKind::NoteOn => self.preview.note_on(event.note, 100),
+                        NoteKind::NoteOff => self.preview.note_off(event.note),
+                    }
+                }
 
                 if event.kind != NoteKind::NoteOn {
                     continue;
@@ -495,6 +547,7 @@ impl Worker {
             self.state.paused.store(false, Ordering::SeqCst);
             self.index = 0;
             self.release_keys();
+            self.preview.all_notes_off();
             self.emit(PlayerEvent::Finished);
             return;
         }
