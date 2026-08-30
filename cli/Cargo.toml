@@ -9,6 +9,7 @@ license.workspace = true
 wwm-engine = { path = "../engine" }
 wwm-input = { path = "../input" }
 wwm-hotkeys = { path = "../hotkeys" }
+wwm-player = { path = "../player" }
 clap.workspace = true
 tokio.workspace = true
 futures-util.workspace = true

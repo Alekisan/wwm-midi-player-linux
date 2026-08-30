@@ -8,9 +8,11 @@
 use clap::{Parser, Subcommand, ValueEnum};
 use futures_util::StreamExt;
 use std::process::ExitCode;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use wwm_engine::mapping::{map_note, NoteMode};
 use wwm_engine::midi::{load_file, NoteKind};
+use wwm_hotkeys::TransportCommand;
+use wwm_player::{Command as PlayerCommand, Player, PlayerEvent};
 
 /// A minimal MIDI player core for native Linux.
 #[derive(Debug, Parser)]
@@ -35,7 +37,7 @@ enum Command {
         #[arg(short, long)]
         limit: Option<usize>,
     },
-    /// Inject a MIDI file through a virtual /dev/uinput keyboard in real time.
+    /// Play a MIDI file. Acts as a plain MIDI player unless --live is set.
     Play {
         #[arg(value_name = "FILE")]
         file: String,
@@ -47,6 +49,12 @@ enum Command {
         /// Hold duration per key press, in milliseconds.
         #[arg(long, default_value_t = 0)]
         hold: u64,
+        /// Go live: inject keystrokes into /dev/uinput. Off by default.
+        #[arg(long)]
+        live: bool,
+        /// Register global hotkeys (Play/Pause, Stop) and keep running.
+        #[arg(long)]
+        hotkeys: bool,
         /// Log each emitted key to stdout.
         #[arg(short, long)]
         verbose: bool,
@@ -94,8 +102,10 @@ async fn main() -> ExitCode {
             options,
             speed,
             hold,
+            live,
+            hotkeys,
             verbose,
-        } => cmd_play(&file, &options, speed, hold, verbose),
+        } => cmd_play(&file, &options, speed, hold, live, hotkeys, verbose).await,
         Command::Hotkeys => cmd_hotkeys().await,
     }
 }
@@ -150,11 +160,13 @@ fn cmd_inspect(
     ExitCode::SUCCESS
 }
 
-fn cmd_play(
+async fn cmd_play(
     file: &str,
     options: &TranslateOptions,
     speed: f64,
     hold: u64,
+    live: bool,
+    hotkeys: bool,
     verbose: bool,
 ) -> ExitCode {
     let song = match load_file(file) {
@@ -165,20 +177,8 @@ fn cmd_play(
         }
     };
 
-    let transpose = options.transpose.unwrap_or(song.transpose);
-    let mode: NoteMode = options.mode.into();
-
-    let mut keyboard = match wwm_input::VirtualKeyboard::create("wwm-midi-player") {
-        Ok(k) => k,
-        Err(e) => {
-            eprintln!("error: {e}");
-            return ExitCode::FAILURE;
-        }
-    };
-    keyboard.set_hold(Duration::from_millis(hold));
-
     eprintln!(
-        "playing {} ({} notes, {:.2}s, {} BPM, speed {:.2}x)",
+        "loaded {} ({} notes, {:.2}s, {} BPM, speed {:.2}x)",
         file,
         song.events
             .iter()
@@ -188,37 +188,92 @@ fn cmd_play(
         60_000_000 / song.tempo_us_per_qn,
         speed
     );
-
-    let speed = speed.clamp(0.05, 16.0);
-    let start = Instant::now();
-
-    for event in &song.events {
-        if event.kind != NoteKind::NoteOn {
-            continue;
-        }
-
-        let target = Duration::from_secs_f64(event.time_ms as f64 / 1000.0 / speed);
-        if let Some(remaining) = target.checked_sub(start.elapsed()) {
-            std::thread::sleep(remaining);
-        }
-
-        let chord = map_note(mode, event.note, transpose);
-        if let Err(e) = keyboard.tap(chord) {
-            eprintln!("error: {e}");
-            return ExitCode::FAILURE;
-        }
-
-        if verbose {
-            println!(
-                "{:>9.3}s  note={:<3}  {}",
-                event.time_ms as f64 / 1000.0,
-                event.note,
-                chord
-            );
-        }
+    if !live {
+        eprintln!("not live: playing as a MIDI player only (pass --live to inject input)");
     }
 
-    eprintln!("done");
+    let (player, events) = Player::spawn();
+    player.send(PlayerCommand::SetSpeed(speed));
+    player.send(PlayerCommand::SetHold(Duration::from_millis(hold)));
+    player.send(PlayerCommand::SetMode(options.mode.into()));
+    player.send(PlayerCommand::SetTranspose(options.transpose));
+    player.load(song);
+    if live {
+        player.set_live(true);
+    }
+
+    if hotkeys {
+        let commands = player.sender();
+        tokio::spawn(async move {
+            let shortcuts = match wwm_hotkeys::PlayerShortcuts::register().await {
+                Ok(s) => s,
+                Err(e) => {
+                    eprintln!("hotkeys unavailable: {e}");
+                    return;
+                }
+            };
+            let mut stream = match shortcuts.activated().await {
+                Ok(s) => s,
+                Err(e) => {
+                    eprintln!("hotkeys unavailable: {e}");
+                    return;
+                }
+            };
+            while let Some(event) = stream.next().await {
+                let command = match wwm_hotkeys::command_for(event.shortcut_id()) {
+                    Some(TransportCommand::PlayPause) => PlayerCommand::TogglePlayPause,
+                    Some(TransportCommand::Stop) => PlayerCommand::Stop,
+                    None => continue,
+                };
+                if commands.send(command).is_err() {
+                    break;
+                }
+            }
+        });
+    }
+
+    player.play();
+
+    // Without hotkeys the CLI exits once the song ends; with hotkeys it stays
+    // running so the transport controls remain usable.
+    let stay_resident = hotkeys;
+    let drain = tokio::task::spawn_blocking(move || {
+        while let Ok(event) = events.recv() {
+            match event {
+                PlayerEvent::Note {
+                    note,
+                    chord,
+                    time_ms,
+                } => {
+                    if verbose {
+                        println!(
+                            "{:>9.3}s  note={:<3}  {}",
+                            time_ms as f64 / 1000.0,
+                            note,
+                            chord
+                        );
+                    }
+                }
+                PlayerEvent::Started => eprintln!("[player] started"),
+                PlayerEvent::Paused => eprintln!("[player] paused"),
+                PlayerEvent::Resumed => eprintln!("[player] resumed"),
+                PlayerEvent::Stopped => eprintln!("[player] stopped"),
+                PlayerEvent::Live(on) => {
+                    eprintln!("[player] live: {}", if on { "ON" } else { "OFF" })
+                }
+                PlayerEvent::Error(e) => eprintln!("[player] error: {e}"),
+                PlayerEvent::Finished => {
+                    eprintln!("[player] finished");
+                    if !stay_resident {
+                        break;
+                    }
+                }
+                PlayerEvent::Loaded { .. } | PlayerEvent::Position(_) => {}
+            }
+        }
+    });
+
+    let _ = drain.await;
     ExitCode::SUCCESS
 }
 

@@ -1,0 +1,10 @@
+[package]
+name = "wwm-player"
+description = "Decoupled playback engine: transport control, timing thread, and Go Live input gating"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+wwm-engine = { path = "../engine" }
+wwm-input = { path = "../input" }

@@ -936,6 +936,7 @@ dependencies = [
  "wwm-engine",
  "wwm-hotkeys",
  "wwm-input",
+ "wwm-player",
 ]
 
 [[package]]
@@ -963,6 +964,14 @@ dependencies = [
  "evdev",
  "thiserror",
  "wwm-engine",
+]
+
+[[package]]
+name = "wwm-player"
+version = "0.1.0"
+dependencies = [
+ "wwm-engine",
+ "wwm-input",
 ]
 
 [[package]]
