@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["engine", "input", "hotkeys", "player", "cli"]
+members = ["engine", "input", "hotkeys", "player", "gui", "cli"]
 
 [workspace.package]
 version = "0.1.0"
@@ -15,3 +15,7 @@ evdev = "0.13"
 ashpd = { version = "0.13", features = ["global_shortcuts"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync"] }
 futures-util = "0.3"
+cxx = "1"
+cxx-qt = "0.10"
+cxx-qt-lib = "0.10"
+cxx-qt-build = "0.10"

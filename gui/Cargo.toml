@@ -1,0 +1,20 @@
+[package]
+name = "wwm-gui"
+description = "Qt6/QML front-end for the Wayland MIDI player"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+wwm-engine = { path = "../engine" }
+wwm-player = { path = "../player" }
+cxx.workspace = true
+cxx-qt.workspace = true
+cxx-qt-lib = { workspace = true, features = ["qt_gui", "qt_qml", "qt_quickcontrols"] }
+
+[build-dependencies]
+cxx-qt-build.workspace = true
+
+[[bin]]
+name = "wwm-gui"
+path = "src/main.rs"
