@@ -18,9 +18,9 @@ pub const PLAY_PAUSE_ID: &str = "play_pause";
 pub const STOP_ID: &str = "stop";
 
 /// Preferred trigger for the Play/Pause shortcut (XKB keysym notation).
-pub const PLAY_PAUSE_TRIGGER: &str = "XF86AudioPlay";
+pub const PLAY_PAUSE_TRIGGER: &str = "CTRL+ALT+P";
 /// Preferred trigger for the Stop shortcut (XKB keysym notation).
-pub const STOP_TRIGGER: &str = "XF86AudioStop";
+pub const STOP_TRIGGER: &str = "CTRL+ALT+S";
 
 /// A transport control produced by a global shortcut.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
