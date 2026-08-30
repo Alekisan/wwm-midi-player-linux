@@ -153,9 +153,9 @@ impl Default for PlayerBridgeRust {
     }
 }
 
-/// A game process has been detected when any of these substrings appear in the
-/// command name or command line (case-insensitive).
-const GAME_KEYWORDS: &[&str] = &["wwm", "where winds meet", "winds meet"];
+/// Game detection looks for the game's process. Needles must not match this
+/// app's own binary or directory names (which contain "wwm").
+const GAME_KEYWORDS: &[&str] = &["where winds meet", "winds meet"];
 
 /// The Go Live button's three visual states.
 #[cfg_attr(test, derive(Debug, PartialEq, Eq))]
@@ -186,6 +186,13 @@ pub fn strip_file_url(path: &str) -> &str {
     path.strip_prefix("file://").unwrap_or(path)
 }
 
+/// True when a cmdline belongs to one of our own binaries.
+fn process_is_ours(cmdline: &str) -> bool {
+    cmdline.contains("wwm-midi-player")
+        || cmdline.contains("wwm-gui")
+        || cmdline.contains("wwm-cli")
+}
+
 fn detect_game() -> bool {
     detect_game_at(Path::new("/proc"))
 }
@@ -200,9 +207,14 @@ fn detect_game_at(proc: &Path) -> bool {
         if !name.bytes().all(|b| b.is_ascii_digit()) {
             continue;
         }
-        let cmdline = entry.path().join("cmdline");
-        let Ok(bytes) = std::fs::read(&cmdline) else { continue };
+        let cmdline_path = entry.path().join("cmdline");
+        let Ok(bytes) = std::fs::read(&cmdline_path) else {
+            continue;
+        };
         let cmdline = String::from_utf8_lossy(&bytes).to_lowercase();
+        if process_is_ours(&cmdline) {
+            continue;
+        }
         for keyword in GAME_KEYWORDS {
             if cmdline.contains(keyword) {
                 return true;
@@ -248,8 +260,14 @@ fn scan_dirs(dirs: &[std::path::PathBuf]) -> (QStringList, QStringList) {
     }
     names.sort_by(|a, b| a.0.to_lowercase().cmp(&b.0.to_lowercase()));
 
-    let names_list: Vec<QString> = names.iter().map(|(n, _)| QString::from(n.as_str())).collect();
-    let paths_list: Vec<QString> = names.iter().map(|(_, p)| QString::from(p.as_str())).collect();
+    let names_list: Vec<QString> = names
+        .iter()
+        .map(|(n, _)| QString::from(n.as_str()))
+        .collect();
+    let paths_list: Vec<QString> = names
+        .iter()
+        .map(|(_, p)| QString::from(p.as_str()))
+        .collect();
     (
         QStringList::from_iter(names_list.iter()),
         QStringList::from_iter(paths_list.iter()),
@@ -442,5 +460,38 @@ mod tests {
     fn strips_file_url_scheme() {
         assert_eq!(strip_file_url("file:///home/x/a.mid"), "/home/x/a.mid");
         assert_eq!(strip_file_url("/home/x/a.mid"), "/home/x/a.mid");
+    }
+
+    #[test]
+    fn our_own_processes_are_excluded_from_game_detection() {
+        use super::process_is_ours;
+        assert!(process_is_ours(
+            "/home/x/wwm-midi-player-linux/target/debug/wwm-gui"
+        ));
+        assert!(process_is_ours("wwm-cli play song.mid"));
+        assert!(!process_is_ours(
+            "/games/steamapps/common/Where Winds Meet/wwm.exe"
+        ));
+    }
+
+    #[test]
+    fn fake_proc_detects_game_and_ignores_ours() {
+        use super::detect_game_at;
+        let dir = std::env::temp_dir().join(format!("wwm-fake-proc-{}", std::process::id()));
+        // Our own GUI process must not count as the game.
+        let ours = dir.join("100");
+        std::fs::create_dir_all(&ours).unwrap();
+        std::fs::write(
+            ours.join("cmdline"),
+            "/home/x/wwm-midi-player-linux/target/debug/wwm-gui",
+        )
+        .unwrap();
+        assert!(!detect_game_at(&dir));
+        // A real game process is detected.
+        let game = dir.join("200");
+        std::fs::create_dir_all(&game).unwrap();
+        std::fs::write(game.join("cmdline"), "Z:\\Where Winds Meet\\wwm.exe").unwrap();
+        assert!(detect_game_at(&dir));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

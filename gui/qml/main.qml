@@ -67,8 +67,8 @@ ApplicationWindow {
             Label {
                 Layout.fillWidth: true
                 elide: Text.ElideMiddle
-                text: bridge.fileName === "" ? qsTr("No file loaded") : bridge.fileName
-                font.bold: bridge.fileName !== ""
+                text: bridge.file_name === "" ? qsTr("No file loaded") : bridge.file_name
+                font.bold: bridge.file_name !== ""
             }
         }
 
@@ -85,7 +85,7 @@ ApplicationWindow {
                 // Label / value pairs: labels right-aligned in a fixed column,
                 // values stretch, so the four pairs line up evenly.
                 Label { text: qsTr("Notes:"); opacity: 0.7; horizontalAlignment: Text.AlignRight }
-                Label { text: bridge.noteCount; Layout.fillWidth: true }
+                Label { text: bridge.note_count; Layout.fillWidth: true }
                 Label { text: qsTr("Tempo:"); opacity: 0.7; horizontalAlignment: Text.AlignRight }
                 Label { text: bridge.bpm + qsTr(" BPM"); Layout.fillWidth: true }
 
@@ -170,7 +170,7 @@ ApplicationWindow {
             id: liveButton
             Layout.fillWidth: true
             Layout.preferredHeight: 56
-            enabled: bridge.gameRunning
+            enabled: bridge.game_running
             onClicked: bridge.goLive(!bridge.live)
 
             background: Rectangle {
@@ -200,7 +200,7 @@ ApplicationWindow {
                 Label {
                     Layout.alignment: Qt.AlignHCenter
                     text: {
-                        if (!bridge.gameRunning)
+                        if (!bridge.game_running)
                             return qsTr("Waiting for the game…");
                         if (bridge.live)
                             return qsTr("Input is being sent to the game — click to stop");
@@ -251,7 +251,7 @@ ApplicationWindow {
 
                     delegate: ItemDelegate {
                         width: playlist.width
-                        highlighted: index === bridge.currentIndex
+                        highlighted: index === bridge.current_index
                         onClicked: bridge.selectSong(index)
 
                         contentItem: RowLayout {
