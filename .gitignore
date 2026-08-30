@@ -1,2 +1,5 @@
 /target
 **/*.rs.bk
+
+# SoundFont binary assets (not source; large)
+/soundfonts/

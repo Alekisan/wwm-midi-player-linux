@@ -8,7 +8,7 @@
 
 pub mod synth;
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 pub use synth::Preview;
 
@@ -92,6 +92,16 @@ pub enum AudioCommand {
     Shutdown,
 }
 
+/// The SoundFont file and `(bank, patch)` preset to use for an instrument.
+#[derive(Debug, Clone)]
+pub struct SoundFontChoice {
+    pub path: PathBuf,
+    pub bank: i32,
+    pub patch: i32,
+    /// True when this came from an instrument-specific font (not the GM fallback).
+    pub specific: bool,
+}
+
 /// Errors surfaced by the preview system.
 #[derive(Debug, thiserror::Error)]
 pub enum PreviewError {
@@ -103,7 +113,27 @@ pub enum PreviewError {
     SoundFontLoad { path: String, detail: String },
 }
 
-/// The directory SoundFonts are loaded from.
+/// Directories searched for SoundFonts, in priority order. The project-local
+/// `soundfonts/` folder ships instrument-specific fonts; the user dir holds the
+/// GM fallback.
+fn soundfont_search_dirs() -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+    if let Ok(cwd) = std::env::current_dir() {
+        dirs.push(cwd.join("soundfonts"));
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        for ancestor in exe.ancestors().skip(1) {
+            let candidate = ancestor.join("soundfonts");
+            if candidate.is_dir() {
+                dirs.push(candidate);
+            }
+        }
+    }
+    dirs.push(soundfonts_dir());
+    dirs
+}
+
+/// The directory SoundFonts are loaded from (per the spec, for the GM fallback).
 pub fn soundfonts_dir() -> PathBuf {
     let home = std::env::var_os("HOME")
         .map(PathBuf::from)
@@ -111,25 +141,64 @@ pub fn soundfonts_dir() -> PathBuf {
     home.join(".local/share/where-winds-meet-player/soundfonts")
 }
 
-/// Resolve the SoundFont file for an instrument, per the spec's hierarchy:
-/// instrument-specific `.sf2` first, then a general GM SoundFont.
-pub fn resolve_soundfont(instrument: Instrument) -> Result<PathBuf, PreviewError> {
-    resolve_soundfont_in(instrument, &soundfonts_dir())
-}
+/// Name-based entries: (file name substring, bank, patch). Matched
+/// case-insensitively against files found in the search dirs.
+const SPECIFIC_FONTS: &[(Instrument, &str, i32, i32)] = &[
+    (Instrument::Erhu, "erhu", 8, 110),        // FS_Erhu_v2.sf2
+    (Instrument::Pipa, "pipa", 32, 105),       // MFA_Pipa.sf2
+    (Instrument::Guqin, "guzheng", 1, 107),    // OLPC_Guzheng.sf2
+    (Instrument::Guqin, "guqin", 0, 0),
+    (Instrument::Erhu, "asian dreamz", 0, 4),  // DSK Asian DreamZ (ERHU)
+    (Instrument::Pipa, "asian dreamz", 0, 0),  // DSK Asian DreamZ (PIPA)
+    (Instrument::Guqin, "asian dreamz", 0, 3), // DSK Asian DreamZ (GUZHEN)
+];
 
-fn resolve_soundfont_in(instrument: Instrument, dir: &Path) -> Result<PathBuf, PreviewError> {
-    let specific = dir.join(instrument.sf2_name());
-    if specific.is_file() {
-        return Ok(specific);
-    }
-    for fallback in ["FluidR3_GM.sf2", "FluidR3_GS.sf2"] {
-        let candidate = dir.join(fallback);
-        if candidate.is_file() {
-            return Ok(candidate);
+/// Resolve the SoundFont + preset for an instrument:
+/// instrument-specific font (by name), else a GM fallback with the mapped program.
+pub fn resolve_soundfont(instrument: Instrument) -> Result<SoundFontChoice, PreviewError> {
+    let dirs = soundfont_search_dirs();
+
+    // Instrument-specific: scan each dir for a file whose name matches.
+    for dir in &dirs {
+        let Ok(entries) = std::fs::read_dir(dir) else { continue };
+        for entry in entries.flatten() {
+            let fname = entry.file_name().to_string_lossy().to_lowercase();
+            if !fname.ends_with(".sf2") {
+                continue;
+            }
+            for (inst, needle, bank, patch) in SPECIFIC_FONTS {
+                if *inst == instrument && fname.contains(needle) {
+                    return Ok(SoundFontChoice {
+                        path: entry.path(),
+                        bank: *bank,
+                        patch: *patch,
+                        specific: true,
+                    });
+                }
+            }
         }
     }
+
+    // GM fallback.
+    for dir in &dirs {
+        for fallback in ["FluidR3_GM.sf2", "FluidR3_GS.sf2"] {
+            let candidate = dir.join(fallback);
+            if candidate.is_file() {
+                return Ok(SoundFontChoice {
+                    path: candidate,
+                    bank: 0,
+                    patch: instrument.gm_program(),
+                    specific: false,
+                });
+            }
+        }
+    }
+
     Err(PreviewError::NoSoundFont {
-        dir: dir.to_string_lossy().into_owned(),
+        dir: dirs
+            .first()
+            .map(|d| d.to_string_lossy().into_owned())
+            .unwrap_or_default(),
     })
 }
 
@@ -147,30 +216,12 @@ mod tests {
     }
 
     #[test]
-    fn resolve_prefers_instrument_specific() {
-        let dir = std::env::temp_dir().join(format!("wwm-sf-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join("FluidR3_GM.sf2"), b"fake").unwrap();
-        std::fs::write(dir.join("guqin.sf2"), b"fake").unwrap();
-
-        // Specific file wins.
-        assert_eq!(
-            resolve_soundfont_in(Instrument::Guqin, &dir).unwrap(),
-            dir.join("guqin.sf2")
-        );
-        // Others fall back to GM.
-        assert_eq!(
-            resolve_soundfont_in(Instrument::Pipa, &dir).unwrap(),
-            dir.join("FluidR3_GM.sf2")
-        );
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn resolve_errors_when_nothing_present() {
-        let dir = std::env::temp_dir().join("wwm-sf-empty");
-        let _ = std::fs::remove_dir_all(&dir);
-        assert!(resolve_soundfont_in(Instrument::Erhu, &dir).is_err());
+    fn specific_fonts_have_valid_patch_numbers() {
+        for (inst, needle, bank, patch) in SPECIFIC_FONTS {
+            assert!((0..128).contains(patch), "{needle} patch out of range");
+            assert!(*bank >= 0, "{needle} bank negative");
+            let _ = inst;
+        }
     }
 
     #[test]

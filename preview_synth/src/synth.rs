@@ -264,13 +264,14 @@ fn handle_command(
 
 /// Load (or reload) the SoundFont for `instrument` and select its preset.
 fn load_instrument(synth: &SharedSynth, instrument: Instrument, status: &Sender<String>) {
-    let path = match resolve_soundfont(instrument) {
-        Ok(p) => p,
+    let choice = match resolve_soundfont(instrument) {
+        Ok(c) => c,
         Err(e) => {
             let _ = status.send(e.to_string());
             return;
         }
     };
+    let path = choice.path.clone();
 
     let new_synth = (|| -> Result<Synthesizer, PreviewError> {
         let file = File::open(&path).map_err(|e| PreviewError::SoundFontLoad {
@@ -295,11 +296,9 @@ fn load_instrument(synth: &SharedSynth, instrument: Instrument, status: &Sender<
                 detail: format!("{e:?}"),
             })?;
 
-        // If this is the generic GM fallback, select the mapped program.
-        // Instrument-specific SF2s are assumed to default to the right preset.
-        if path.file_name().and_then(|n| n.to_str()) != Some(instrument.sf2_name()) {
-            synth.process_midi_message(CHANNEL, PROGRAM_CHANGE, instrument.gm_program(), 0);
-        }
+        // Select the resolved preset (bank select CC32, then program change).
+        synth.process_midi_message(CHANNEL, 0xB0, 32, choice.bank); // Bank Select LSB
+        synth.process_midi_message(CHANNEL, PROGRAM_CHANGE, choice.patch, 0);
         Ok(synth)
     })();
 
