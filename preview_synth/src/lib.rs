@@ -144,12 +144,12 @@ pub fn soundfonts_dir() -> PathBuf {
 /// Name-based entries: (file name substring, bank, patch). Matched
 /// case-insensitively against files found in the search dirs.
 const SPECIFIC_FONTS: &[(Instrument, &str, i32, i32)] = &[
-    (Instrument::Erhu, "erhu", 8, 110),        // FS_Erhu_v2.sf2
-    (Instrument::Pipa, "pipa", 32, 105),       // MFA_Pipa.sf2
-    (Instrument::Guqin, "guzheng", 1, 107),    // OLPC_Guzheng.sf2
+    (Instrument::Erhu, "erhu", 8, 110),     // FS_Erhu_v2.sf2
+    (Instrument::Pipa, "pipa", 32, 105),    // MFA_Pipa.sf2
+    (Instrument::Guqin, "guzheng", 1, 107), // OLPC_Guzheng.sf2
     (Instrument::Guqin, "guqin", 0, 0),
-    (Instrument::Erhu, "asian dreamz", 0, 4),  // DSK Asian DreamZ (ERHU)
-    (Instrument::Pipa, "asian dreamz", 0, 0),  // DSK Asian DreamZ (PIPA)
+    (Instrument::Erhu, "asian dreamz", 0, 4), // DSK Asian DreamZ (ERHU)
+    (Instrument::Pipa, "asian dreamz", 0, 0), // DSK Asian DreamZ (PIPA)
     (Instrument::Guqin, "asian dreamz", 0, 3), // DSK Asian DreamZ (GUZHEN)
 ];
 
@@ -160,7 +160,9 @@ pub fn resolve_soundfont(instrument: Instrument) -> Result<SoundFontChoice, Prev
 
     // Instrument-specific: scan each dir for a file whose name matches.
     for dir in &dirs {
-        let Ok(entries) = std::fs::read_dir(dir) else { continue };
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            continue;
+        };
         for entry in entries.flatten() {
             let fname = entry.file_name().to_string_lossy().to_lowercase();
             if !fname.ends_with(".sf2") {

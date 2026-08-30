@@ -144,6 +144,18 @@ impl Player {
         let (evt_tx, evt_rx) = channel();
         let state = Arc::new(PlayerState::default());
 
+        // Spawn the preview synth and forward its status messages as player events.
+        let (preview, preview_status) = wwm_preview_synth::Preview::spawn();
+        let status_tx = evt_tx.clone();
+        thread::Builder::new()
+            .name("wwm-preview-status".into())
+            .spawn(move || {
+                for message in preview_status {
+                    let _ = status_tx.send(PlayerEvent::Error(message));
+                }
+            })
+            .expect("failed to spawn preview status thread");
+
         let worker_state = Arc::clone(&state);
         let thread = thread::Builder::new()
             .name("wwm-playback".into())
@@ -151,7 +163,7 @@ impl Player {
                 Worker {
                     song: None,
                     keyboard: None,
-                    preview: wwm_preview_synth::Preview::spawn().0,
+                    preview,
                     state: worker_state,
                     events: evt_tx,
                     commands: cmd_rx,

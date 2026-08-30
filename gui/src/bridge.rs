@@ -132,6 +132,10 @@ pub struct PlayerBridgeRust {
 impl Default for PlayerBridgeRust {
     fn default() -> Self {
         let (player, events) = Player::spawn();
+        // Align the player's state with the UI defaults: audio preview on,
+        // Guqin selected.
+        player.set_preview(true);
+        player.set_instrument(Instrument::Guqin);
         let (songs, song_paths) = scan_dirs(&default_scan_dirs());
 
         // Watch for the game process in the background so the Go Live button

@@ -187,13 +187,14 @@ fn run(
     let mut instrument = Instrument::Guqin;
 
     // Only attach a source if we actually opened a device.
-    let mut _source_guard: Option<rodio::mixer::Mixer> = None;
     if let Some(dev) = device.as_ref() {
-        let mixer = dev.mixer().clone();
         let source = SynthSource::new(Arc::clone(&synth), volume);
-        mixer.add(source);
-        _source_guard = Some(mixer);
+        dev.mixer().add(source);
+        // The `MixerDeviceSink` in `device` keeps the output stream alive.
     }
+
+    // Load the default instrument so notes produce sound immediately.
+    load_instrument(&synth, instrument, &status);
 
     let running = AtomicBool::new(true);
     loop {
@@ -307,9 +308,63 @@ fn load_instrument(synth: &SharedSynth, instrument: Instrument, status: &Sender<
             if let Ok(mut guard) = synth.lock() {
                 *guard = Some(s);
             }
+            let _ = status.send(format!(
+                "preview: {} ({:?} bank {} patch {})",
+                instrument.display_name(),
+                choice.path.file_name().map(|f| f.to_string_lossy()),
+                choice.bank,
+                choice.patch
+            ));
         }
         Err(e) => {
             let _ = status.send(e.to_string());
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs::File;
+    use std::io::BufReader;
+
+    fn load_font() -> Option<Arc<SoundFont>> {
+        let p = std::env::var_os("HOME")?
+            .into_string()
+            .ok()?
+            .parse::<std::path::PathBuf>()
+            .ok()?
+            .join(".local/share/where-winds-meet-player/soundfonts/FluidR3_GM.sf2");
+        let file = File::open(p).ok()?;
+        SoundFont::new(&mut BufReader::new(file)).ok().map(Arc::new)
+    }
+
+    fn peak(synth: &mut Synthesizer, blocks: usize) -> f32 {
+        let mut l = vec![0.0; BLOCK_SIZE];
+        let mut r = vec![0.0; BLOCK_SIZE];
+        let mut peak = 0.0f32;
+        for _ in 0..blocks {
+            synth.render(&mut l, &mut r);
+            for (&a, &b) in l.iter().zip(r.iter()) {
+                peak = peak.max(a.abs()).max(b.abs());
+            }
+        }
+        peak
+    }
+
+    #[test]
+    fn synth_renders_audible_audio() {
+        let Some(font) = load_font() else {
+            eprintln!("skipping: no FluidR3_GM.sf2 installed");
+            return;
+        };
+        let mut settings = SynthesizerSettings::new(44100);
+        settings.block_size = BLOCK_SIZE;
+        settings.maximum_polyphony = 64;
+        let mut synth = Synthesizer::new(&font, &settings).unwrap();
+        synth.note_on(0, 60, 100);
+        let p = peak(&mut synth, 10);
+        assert!(p > 0.001, "expected audible sample, peak={p}");
+        synth.note_off_all(true);
     }
 }
