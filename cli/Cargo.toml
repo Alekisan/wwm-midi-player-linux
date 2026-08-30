@@ -8,7 +8,10 @@ license.workspace = true
 [dependencies]
 wwm-engine = { path = "../engine" }
 wwm-input = { path = "../input" }
+wwm-hotkeys = { path = "../hotkeys" }
 clap.workspace = true
+tokio.workspace = true
+futures-util.workspace = true
 
 [[bin]]
 name = "wwm"

@@ -1,0 +1,12 @@
+[package]
+name = "wwm-hotkeys"
+description = "XDG global shortcuts (Play/Pause, Stop) via the ashpd portal, targeting KDE Plasma 6"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+ashpd.workspace = true
+tokio.workspace = true
+futures-util.workspace = true
+thiserror.workspace = true

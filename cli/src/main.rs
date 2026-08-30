@@ -3,8 +3,10 @@
 //! Subcommands:
 //! - `inspect` — parse a `.mid` file and print the translated timed key events.
 //! - `play`   — parse and inject the events through `/dev/uinput` in real time.
+//! - `hotkeys`— listen for Play/Pause and Stop global shortcuts via the portal.
 
 use clap::{Parser, Subcommand, ValueEnum};
+use futures_util::StreamExt;
 use std::process::ExitCode;
 use std::time::{Duration, Instant};
 use wwm_engine::mapping::{map_note, NoteMode};
@@ -49,6 +51,8 @@ enum Command {
         #[arg(short, long)]
         verbose: bool,
     },
+    /// Listen for Play/Pause and Stop global shortcuts and print them.
+    Hotkeys,
 }
 
 #[derive(Debug, clap::Args)]
@@ -76,7 +80,8 @@ impl From<NoteModeArg> for NoteMode {
     }
 }
 
-fn main() -> ExitCode {
+#[tokio::main(flavor = "current_thread")]
+async fn main() -> ExitCode {
     match Cli::parse().command {
         Command::Inspect {
             file,
@@ -91,6 +96,7 @@ fn main() -> ExitCode {
             hold,
             verbose,
         } => cmd_play(&file, &options, speed, hold, verbose),
+        Command::Hotkeys => cmd_hotkeys().await,
     }
 }
 
@@ -213,5 +219,34 @@ fn cmd_play(
     }
 
     eprintln!("done");
+    ExitCode::SUCCESS
+}
+
+async fn cmd_hotkeys() -> ExitCode {
+    let player = match wwm_hotkeys::PlayerShortcuts::register().await {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("error: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+
+    let mut events = match player.activated().await {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("error: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+
+    eprintln!("listening for global shortcuts...");
+    while let Some(evt) = events.next().await {
+        if let Some(cmd) = wwm_hotkeys::command_for(evt.shortcut_id()) {
+            println!("[{cmd}]");
+        } else {
+            println!("[hotkey: unknown id '{}']", evt.shortcut_id());
+        }
+    }
+
     ExitCode::SUCCESS
 }

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["engine", "input", "cli"]
+members = ["engine", "input", "hotkeys", "cli"]
 
 [workspace.package]
 version = "0.1.0"
@@ -12,3 +12,6 @@ midly = "0.5"
 thiserror = "2"
 clap = { version = "4", features = ["derive"] }
 evdev = "0.13"
+ashpd = { version = "0.13", features = ["global_shortcuts"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync"] }
+futures-util = "0.3"

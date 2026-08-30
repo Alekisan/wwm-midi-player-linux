@@ -45,5 +45,5 @@ detection alone.
 
 - **Phase 1 — CLI core:** parse `.mid`, 36-key mapping, timed events. *(done)*
 - **Phase 2 — Virtual hardware:** `/dev/uinput` device, press/release. *(done)*
-- **Phase 3 — Wayland portals:** global hotkeys (Play/Pause, Stop) via `ashpd`.
+- **Phase 3 — Wayland portals:** global hotkeys (Play/Pause, Stop) via `ashpd`. *(done)*
 - **Phase 4 — Qt6 front-end:** load files, playback controls, "Go Live" toggle.
