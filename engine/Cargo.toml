@@ -1,0 +1,10 @@
+[package]
+name = "wwm-engine"
+description = "Decoupled MIDI parsing + note-to-key mapping engine for the Wayland MIDI player"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+midly.workspace = true
+thiserror.workspace = true

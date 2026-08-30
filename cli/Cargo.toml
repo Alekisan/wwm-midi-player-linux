@@ -1,0 +1,10 @@
+[package]
+name = "wwm-cli"
+description = "CLI front-end for the Wayland MIDI player engine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+wwm-engine = { path = "../engine" }
+clap.workspace = true
