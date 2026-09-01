@@ -34,7 +34,8 @@ All four phases are **complete and working**, plus the audio-preview feature.
   Do not use camelCase in QML.
 - **Go Live gating:** button is disabled (gray) until a game process is detected;
   green when ready, red when live. Detection scans `/proc` every 2s, excluding our
-  own `wwm-*` processes, matching "where winds meet"/"winds meet" in cmdline.
+  own `wwm-*` processes, matching `wwm.exe` (plus "where winds meet"/"winds meet")
+  in cmdline.
 - **Audio preview:** default-on (checkbox "Preview"), instrument dropdown for the
   five instruments. SoundFonts resolved from project `soundfonts/` first, then
   `~/.local/share/where-winds-meet-player/soundfonts/`. Preset selected via
@@ -83,18 +84,29 @@ All four phases are **complete and working**, plus the audio-preview feature.
    the low row, so wide-range pieces collapse many pitches onto the same game key
    (notes 36/48/60 all → `n`). Faithful port of the reference, but loses octave
    detail. Tune if preview sounds flat.
-3. **Game detection against the real Proton process.** Verified against the
-   installed game (Steam appid 3564740, name "Where Winds Meet", folder
-   `Where Winds Meet`, exe `Engine/Binaries/Win64r/wwm.exe`, running under
-   Proton). Detection now matches `wwm.exe` plus `where winds meet`/`winds meet`,
-   so the `Go Live` button resolves reliably whether the process cmdline carries
-   the full install path or just the exe name. Still needs a live on-box check
-   that the button actually lights up while the game is running here.
+3. ~~Game detection against the real Proton process~~ **DONE** — verified live on
+   `oldalienware`: `Go Live` goes gray→green when the game launches (Steam appid
+   3564740, folder "Where Winds Meet", exe `Engine/Binaries/Win64r/wwm.exe`, under
+   Proton), green↔red toggling while live, back to gray on exit. Detection matches
+   `wwm.exe` plus "where winds meet"/"winds meet".
 4. **Live injection end-to-end with the game** (untested: `/dev/uinput` → Proton
    game receiving the melody).
+
+## Test / deploy machine
+
+- **`oldalienware`** — the gaming box with WWM installed. SSH alias
+  `ssh oldalienware` (`HostName oldalienware.home.arpa`, `User maria`).
+- x86_64, **CachyOS/KDE**, `qt6-base 6.11.2` (same as the dev box), **no Rust
+  toolchain** — so build locally and copy binaries over.
+- Deploy: `cargo build --release`, then
+  `scp target/release/wwm-gui target/release/wwm oldalienware:~/` plus
+  `scp -r soundfonts oldalienware:~/` for audio preview. Only **two** executables
+  exist (`wwm-gui`, `wwm`); libraries are compiled in, and a stale `wwm-cli`
+  sits in `target/debug/` (ignore it).
 
 ## Git
 
 - Repo: `https://github.com/Alekisan/wwm-midi-player-linux` (branch `main`).
-- Reference (original Svelte/Tauri Windows app): forked as
+- Reference (original Svelte/Tauri Windows app by SnowiyQ, `SnowiyQ/Where-Winds-Meet-Midi-Player`): forked as
   `Alekisan/Where-Winds-Meet-Midi-Player`.
+- MIT license, © Alexander D. Martinez (see `LICENSE`).
