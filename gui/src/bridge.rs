@@ -36,6 +36,7 @@ pub mod qobject {
         #[qproperty(i32, transpose)]
         #[qproperty(i32, bpm)]
         #[qproperty(bool, loaded)]
+        #[qproperty(bool, uinput_ready)]
         type PlayerBridge = super::PlayerBridgeRust;
 
         /// Emitted for every note the player fires, for visualization.
@@ -71,6 +72,8 @@ pub mod qobject {
         #[qinvokable]
         fn add_folder(self: Pin<&mut PlayerBridge>, path: &QString);
         #[qinvokable]
+        fn install_uinput_rule(self: Pin<&mut PlayerBridge>);
+        #[qinvokable]
         fn poll(self: Pin<&mut PlayerBridge>);
     }
 }
@@ -84,6 +87,12 @@ use std::sync::Arc;
 use std::time::Duration;
 use wwm_engine::midi::{load_file, NoteKind};
 use wwm_player::{Command, Instrument, Player, PlayerEvent};
+use wwm_input::{uinput_accessible, UDEV_RULE_CONTENT, UDEV_RULE_PATH};
+
+/// Path a signed udev rule is staged to before `pkexec` copies it into
+/// `/etc/udev/rules.d`. Kept in `/tmp` so the polkit-elevated process can read it
+/// regardless of our `TMPDIR`/`XDG_RUNTIME_DIR`.
+const STAGED_RULE_PATH: &str = "/tmp/wwm-uinput.rules";
 
 /// Directories scanned for MIDI files, in addition to any folders the user adds.
 fn default_scan_dirs() -> Vec<std::path::PathBuf> {
@@ -125,6 +134,7 @@ pub struct PlayerBridgeRust {
     transpose: i32,
     bpm: i32,
     loaded: bool,
+    uinput_ready: bool,
     player: Player,
     events: Receiver<PlayerEvent>,
 }
@@ -163,6 +173,7 @@ impl Default for PlayerBridgeRust {
             transpose: 0,
             bpm: 0,
             loaded: false,
+            uinput_ready: uinput_accessible(),
             player,
             events,
         }
@@ -171,7 +182,14 @@ impl Default for PlayerBridgeRust {
 
 /// Game detection looks for the game's process. Needles must not match this
 /// app's own binary or directory names (which contain "wwm").
-const GAME_KEYWORDS: &[&str] = &["where winds meet", "winds meet"];
+///
+/// The game (Steam appid 3564740) installs to a folder named "Where Winds Meet"
+/// and its executable is `wwm.exe` (`Engine/Binaries/Win64r/wwm.exe`). Under
+/// Proton the process cmdline is that Windows path, so "winds meet" matches the
+/// install folder; "wwm.exe" additionally matches even when cmdline only carries
+/// the bare executable name. Our own binaries are `wwm-gui` / `wwm-cli` /
+/// `wwm-midi-player`, none of which contain `.exe`, so "wwm.exe" is unambiguous.
+const GAME_KEYWORDS: &[&str] = &["wwm.exe", "where winds meet", "winds meet"];
 
 /// The Go Live button's three visual states.
 #[cfg_attr(test, derive(Debug, PartialEq, Eq))]
@@ -248,6 +266,34 @@ fn spawn_game_watcher(detected: Arc<AtomicBool>) {
             std::thread::sleep(Duration::from_secs(2));
         })
         .expect("failed to spawn game watcher");
+}
+
+/// Install the uinput udev rule via polkit (`pkexec`), then reload+trigger udev.
+///
+/// The rule is written to a world-readable `/tmp` file first; the elevated shell
+/// copies it into `/etc/udev/rules.d` and re-applies rules so the `uaccess` ACL
+/// lands on `/dev/uinput` immediately (no re-login required). Returns `Ok(true)`
+/// if the elevated command succeeded, `Ok(false)` if it was cancelled/denied, and
+/// `Err` if it could not be launched (e.g. `pkexec` missing).
+fn install_uinput_rule_via_pkexec() -> std::io::Result<bool> {
+    std::fs::write(STAGED_RULE_PATH, UDEV_RULE_CONTENT)?;
+    let script = format!(
+        "install -m 0644 '{STAGED_RULE_PATH}' '{UDEV_RULE_PATH}' \
+         && udevadm control --reload-rules && udevadm trigger"
+    );
+    let status = std::process::Command::new("pkexec")
+        .arg("sh")
+        .arg("-c")
+        .arg(&script)
+        .status();
+    let _ = std::fs::remove_file(STAGED_RULE_PATH);
+    match status {
+        Ok(st) => Ok(st.success()),
+        Err(e) => {
+            // Reproduce a readable message the caller can surface in the status bar.
+            Err(std::io::Error::new(e.kind(), format!("could not run pkexec: {e}")))
+        }
+    }
 }
 
 /// Scan directories (one level deep) for `.mid` / `.midi` files.
@@ -394,8 +440,44 @@ impl qobject::PlayerBridge {
     }
 
     /// Toggle input injection into the game.
-    pub fn go_live(self: Pin<&mut Self>, on: bool) {
+    pub fn go_live(mut self: Pin<&mut Self>, on: bool) {
+        if on && !self.uinput_ready {
+            // Injection requires /dev/uinput access; the front-end should already
+            // have shown the setup popup, but guard defensively here.
+            self.as_mut().set_status(QString::from(
+                "Input injection needs /dev/uinput access — install the udev rule",
+            ));
+            return;
+        }
         self.player.set_live(on);
+    }
+
+    /// Install the uinput udev rule via the authentication prompt, then re-check
+    /// whether injection is now possible.
+    pub fn install_uinput_rule(mut self: Pin<&mut Self>) {
+        match install_uinput_rule_via_pkexec() {
+            Ok(true) => {
+                if uinput_accessible() {
+                    self.as_mut().set_uinput_ready(true);
+                    self.as_mut()
+                        .set_status(QString::from("Input injection enabled"));
+                } else {
+                    // Rule installed but /dev/uinput still not writable (rare).
+                    self.as_mut().set_status(QString::from(
+                        "udev rule installed but /dev/uinput still not writable",
+                    ));
+                }
+            }
+            Ok(false) => {
+                self.as_mut().set_status(QString::from(
+                    "udev rule not installed (cancelled) — injection unavailable",
+                ));
+            }
+            Err(e) => {
+                self.as_mut()
+                    .set_status(QString::from(format!("Error: {e}").as_str()));
+            }
+        }
     }
 
     /// Toggle local audio preview.
@@ -547,6 +629,11 @@ mod tests {
         let game = dir.join("200");
         std::fs::create_dir_all(&game).unwrap();
         std::fs::write(game.join("cmdline"), "Z:\\Where Winds Meet\\wwm.exe").unwrap();
+        assert!(detect_game_at(&dir));
+        // The bare exe name alone (no install path) is also detected.
+        let bare = dir.join("300");
+        std::fs::create_dir_all(&bare).unwrap();
+        std::fs::write(bare.join("cmdline"), "wwm.exe").unwrap();
         assert!(detect_game_at(&dir));
         let _ = std::fs::remove_dir_all(&dir);
     }

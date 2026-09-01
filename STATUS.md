@@ -49,6 +49,22 @@ All four phases are **complete and working**, plus the audio-preview feature.
 - `~/.local/share/where-winds-meet-player/soundfonts/FluidR3_GM.sf2` + `FluidR3_GS.sf2`
   (installed from Arch `soundfont-fluid` package) = GM fallback.
 
+### uinput udev rule (auto-setup)
+
+- The GUI checks `/dev/uinput` write access at startup (exposed as the
+  `uinput_ready` QML property). If it's not writable, it opens a `Dialog` from
+  `main.qml` explaining the need and offering "Install…".
+- "Install…" calls the `install_uinput_rule` invokable, which writes the rule to
+  `/tmp`, then runs `pkexec sh -c "install -m 0644 ... && udevadm control --reload-rules
+  && udevadm trigger"`. The rule (`input::UDEV_RULE_CONTENT`,
+  `/etc/udev/rules.d/99-wwm-uinput.rules`) uses `KERNEL=="uinput",
+  SUBSYSTEM=="misc", TAG+="uaccess"` so systemd-logind grants the active-seat user
+  access with no group/re-login. The Go Live button also re-prompts if the user
+  dismissed it at startup.
+- Detection/install helpers live in the `input` crate (`uinput_accessible`,
+  `udev_rule_installed`, `UDEV_RULE_PATH`/`UDEV_RULE_CONTENT`); the pkexec wiring
+  is in the GUI bridge (`STAGED_RULE_PATH`, `install_uinput_rule_via_pkexec`).
+
 ### Confirmed mappings
 
 | Instrument | Font | bank/patch |
@@ -67,10 +83,13 @@ All four phases are **complete and working**, plus the audio-preview feature.
    the low row, so wide-range pieces collapse many pitches onto the same game key
    (notes 36/48/60 all → `n`). Faithful port of the reference, but loses octave
    detail. Tune if preview sounds flat.
-3. **Game detection against the real Proton process.** Current keywords
-   ("where winds meet"/"winds meet") are unverified against the actual running
-   game. Confirm the `Go Live` button lights up when the game runs, and adjust the
-   process-name matching (Steam/Proton cmdlines are messy) as needed.
+3. **Game detection against the real Proton process.** Verified against the
+   installed game (Steam appid 3564740, name "Where Winds Meet", folder
+   `Where Winds Meet`, exe `Engine/Binaries/Win64r/wwm.exe`, running under
+   Proton). Detection now matches `wwm.exe` plus `where winds meet`/`winds meet`,
+   so the `Go Live` button resolves reliably whether the process cmdline carries
+   the full install path or just the exe name. Still needs a live on-box check
+   that the button actually lights up while the game is running here.
 4. **Live injection end-to-end with the game** (untested: `/dev/uinput` → Proton
    game receiving the melody).
 

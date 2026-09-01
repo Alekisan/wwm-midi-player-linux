@@ -2160,6 +2160,7 @@ dependencies = [
  "cxx-qt-build",
  "cxx-qt-lib",
  "wwm-engine",
+ "wwm-input",
  "wwm-player",
  "wwm-preview-synth",
 ]

@@ -25,6 +25,37 @@ pub enum InputError {
 
 const SYN_REPORT: u16 = 0;
 
+/// Absolute path of the udev rule the player installs so the logged-in user can
+/// write to `/dev/uinput` without running as root.
+pub const UDEV_RULE_PATH: &str = "/etc/udev/rules.d/99-wwm-uinput.rules";
+
+/// Contents of the installed udev rule.
+///
+/// The `uaccess` tag makes systemd-logind grant read/write access on
+/// `/dev/uinput` to the user at the active seat — no `uinput` group membership
+/// or `sudo` needed, and it applies immediately without a re-login.
+pub const UDEV_RULE_CONTENT: &str =
+    "KERNEL==\"uinput\", SUBSYSTEM==\"misc\", TAG+=\"uaccess\"\n";
+
+/// True when `/dev/uinput` can be opened for writing, i.e. input injection will
+/// work. This is the same check `VirtualKeyboard::create` performs implicitly.
+pub fn uinput_accessible() -> bool {
+    uinput_accessible_at("/dev/uinput")
+}
+
+fn uinput_accessible_at(path: &str) -> bool {
+    std::fs::OpenOptions::new().write(true).open(path).is_ok()
+}
+
+/// True when the player's udev rule is already installed.
+pub fn udev_rule_installed() -> bool {
+    udev_rule_installed_at(UDEV_RULE_PATH)
+}
+
+fn udev_rule_installed_at(path: &str) -> bool {
+    std::path::Path::new(path).is_file()
+}
+
 /// A virtual keyboard device backed by `/dev/uinput`.
 pub struct VirtualKeyboard {
     device: VirtualDevice,
@@ -287,5 +318,33 @@ mod tests {
     fn creates_virtual_device_via_uinput() {
         let device = VirtualKeyboard::create("wwm-test").expect("create virtual device");
         drop(device);
+    }
+
+    #[test]
+    fn uinput_access_detects_missing_device() {
+        assert!(!uinput_accessible_at("/dev/does-not-exist-wwm"));
+    }
+
+    #[test]
+    fn uinput_access_detects_a_writable_file() {
+        let path = std::env::temp_dir().join(format!("wwm-write-{}", std::process::id()));
+        std::fs::write(&path, b"").unwrap();
+        assert!(uinput_accessible_at(path.to_str().unwrap()));
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn udev_rule_installed_detects_file() {
+        let path = std::env::temp_dir().join(format!("wwm-rule-{}", std::process::id()));
+        assert!(!udev_rule_installed_at(path.to_str().unwrap()));
+        std::fs::write(&path, UDEV_RULE_CONTENT).unwrap();
+        assert!(udev_rule_installed_at(path.to_str().unwrap()));
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn udev_rule_uses_uaccess_tag() {
+        assert!(UDEV_RULE_CONTENT.contains("TAG+=\"uaccess\""));
+        assert!(UDEV_RULE_CONTENT.contains("KERNEL==\"uinput\""));
     }
 }

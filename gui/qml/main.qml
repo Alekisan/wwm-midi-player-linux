@@ -26,6 +26,51 @@ ApplicationWindow {
         onTriggered: bridge.poll()
     }
 
+    // First-run check: if input injection can't reach /dev/uinput yet, offer to
+    // install the udev rule up front.
+    Component.onCompleted: {
+        if (!bridge.uinput_ready)
+            uinputDialog.open();
+    }
+
+    Dialog {
+        id: uinputDialog
+        anchors.centerIn: parent
+        modal: true
+        title: qsTr("Input injection needs /dev/uinput access")
+        padding: 20
+
+        ColumnLayout {
+            spacing: 12
+            Layout.maximumWidth: 440
+
+            Label {
+                wrapMode: Text.WordWrap
+                text: qsTr("Playing MIDI into the game sends keystrokes through a virtual input device (/dev/uinput).\n\nYour account needs write access to it. This player can install a udev rule that grants access to the logged-in user — no reboot needed. You'll be asked to authenticate.")
+            }
+
+            Label {
+                wrapMode: Text.WordWrap
+                opacity: 0.7
+                text: qsTr("You can also skip this and keep using audio preview only.")
+            }
+        }
+
+        footer: DialogButtonBox {
+            Button {
+                text: qsTr("Install…")
+                icon.name: "dialog-password"
+                DialogButtonBox.buttonRole: DialogButtonBox.AcceptRole
+            }
+            Button {
+                text: qsTr("Not now")
+                DialogButtonBox.buttonRole: DialogButtonBox.RejectRole
+            }
+        }
+
+        onAccepted: bridge.install_uinput_rule()
+    }
+
     FileDialog {
         id: fileDialog
         title: qsTr("Choose a MIDI file")
@@ -198,7 +243,12 @@ ApplicationWindow {
             Layout.fillWidth: true
             Layout.preferredHeight: 56
             enabled: bridge.game_running
-            onClicked: bridge.go_live(!bridge.live)
+            onClicked: {
+                if (!bridge.live && !bridge.uinput_ready)
+                    uinputDialog.open();
+                else
+                    bridge.go_live(!bridge.live);
+            }
 
             background: Rectangle {
                 radius: 6
