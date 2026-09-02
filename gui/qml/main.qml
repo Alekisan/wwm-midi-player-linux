@@ -7,10 +7,10 @@ import com.wwm.player
 ApplicationWindow {
     id: window
 
-    width: 820
-    height: 640
-    minimumWidth: 760
-    minimumHeight: 620
+    width: 960
+    height: 700
+    minimumWidth: 860
+    minimumHeight: 650
     visible: true
     title: qsTr("Where Winds Meet — MIDI Player")
 
