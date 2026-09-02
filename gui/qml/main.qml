@@ -9,8 +9,8 @@ ApplicationWindow {
 
     width: 820
     height: 640
-    minimumWidth: 640
-    minimumHeight: 560
+    minimumWidth: 760
+    minimumHeight: 620
     visible: true
     title: qsTr("Where Winds Meet — MIDI Player")
 
@@ -215,6 +215,16 @@ ApplicationWindow {
 
                 ToolTip.visible: hovered
                 ToolTip.text: qsTr("Preview instrument")
+            }
+
+            ComboBox {
+                id: keyModePicker
+                model: ["21-key", "36-key"]
+                currentIndex: bridge.key_mode
+                onActivated: bridge.choose_key_mode(index)
+
+                ToolTip.visible: hovered
+                ToolTip.text: qsTr("Keyboard layout — match the in-game Free Play setting (F1)")
             }
 
             Item { Layout.fillWidth: true }
