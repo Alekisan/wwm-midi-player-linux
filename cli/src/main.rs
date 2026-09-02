@@ -9,7 +9,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 use futures_util::StreamExt;
 use std::process::ExitCode;
 use std::time::Duration;
-use wwm_engine::mapping::{map_note, NoteMode};
+use wwm_engine::mapping::{map_note, KeyMode, NoteMode};
 use wwm_engine::midi::{load_file, NoteKind};
 use wwm_hotkeys::TransportCommand;
 use wwm_player::{Command as PlayerCommand, Player, PlayerEvent};
@@ -68,6 +68,9 @@ struct TranslateOptions {
     /// Note-to-key mode.
     #[arg(short, long, value_enum, default_value_t = NoteModeArg::Closest)]
     mode: NoteModeArg,
+    /// Keyboard layout: 21 natural notes or 36 chromatic.
+    #[arg(long, value_enum, default_value_t = KeyModeArg::TwentyOne)]
+    keys: KeyModeArg,
     /// Manual transpose in semitones (overrides auto-detection).
     #[arg(short, long)]
     transpose: Option<i32>,
@@ -84,6 +87,21 @@ impl From<NoteModeArg> for NoteMode {
         match a {
             NoteModeArg::Closest => NoteMode::Closest,
             NoteModeArg::Raw => NoteMode::Raw,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum KeyModeArg {
+    TwentyOne,
+    ThirtySix,
+}
+
+impl From<KeyModeArg> for KeyMode {
+    fn from(a: KeyModeArg) -> Self {
+        match a {
+            KeyModeArg::TwentyOne => KeyMode::TwentyOne,
+            KeyModeArg::ThirtySix => KeyMode::ThirtySix,
         }
     }
 }
@@ -126,6 +144,9 @@ fn cmd_inspect(
 
     let transpose = options.transpose.unwrap_or(song.transpose);
     let mode: NoteMode = options.mode.into();
+    let key_mode: KeyMode = options.keys.into();
+    // Octave fold is applied on top of the semitone transpose for mapping only.
+    let map_transpose = transpose + song.octave_shift;
 
     eprintln!(
         "loaded {} ({} events, {:.2}s, {} BPM)",
@@ -134,7 +155,15 @@ fn cmd_inspect(
         song.duration_secs,
         60_000_000 / song.tempo_us_per_qn
     );
-    eprintln!("transpose: {} semitones", transpose);
+    eprintln!(
+        "transpose: {} semitones, octave fold: {:+}, key mode: {}",
+        transpose,
+        song.octave_shift,
+        match key_mode {
+            KeyMode::TwentyOne => "21-key",
+            KeyMode::ThirtySix => "36-key",
+        }
+    );
 
     for event in song
         .events
@@ -142,7 +171,7 @@ fn cmd_inspect(
         .filter(|e| !notes_only || e.kind == NoteKind::NoteOn)
         .take(limit.unwrap_or(usize::MAX))
     {
-        let key = map_note(mode, event.note, transpose);
+        let key = map_note(key_mode, mode, event.note, map_transpose);
         let verb = match event.kind {
             NoteKind::NoteOn => "press",
             NoteKind::NoteOff => "release",
@@ -196,6 +225,7 @@ async fn cmd_play(
     player.send(PlayerCommand::SetSpeed(speed));
     player.send(PlayerCommand::SetHold(Duration::from_millis(hold)));
     player.send(PlayerCommand::SetMode(options.mode.into()));
+    player.send(PlayerCommand::SetKeyMode(options.keys.into()));
     player.send(PlayerCommand::SetTranspose(options.transpose));
     player.load(song);
     if live {

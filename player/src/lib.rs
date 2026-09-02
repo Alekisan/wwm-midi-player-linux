@@ -16,7 +16,7 @@ use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
-use wwm_engine::mapping::{map_note, KeyChord, NoteMode};
+use wwm_engine::mapping::{map_note, KeyChord, KeyMode, NoteMode};
 use wwm_engine::midi::{NoteKind, Song};
 use wwm_input::VirtualKeyboard;
 
@@ -87,6 +87,8 @@ pub enum Command {
     /// Playback speed multiplier (1.0 = normal).
     SetSpeed(f64),
     SetMode(NoteMode),
+    /// Switch the keyboard layout (21 vs 36 key).
+    SetKeyMode(KeyMode),
     /// Override the auto-detected transpose; `None` restores auto.
     SetTranspose(Option<i32>),
     /// Key hold duration per note.
@@ -172,6 +174,7 @@ impl Player {
                     anchor_song_ms: 0.0,
                     speed: 1.0,
                     mode: NoteMode::Closest,
+                    key_mode: KeyMode::TwentyOne,
                     transpose_override: None,
                     hold: Duration::ZERO,
                     instrument: Instrument::Guqin,
@@ -256,6 +259,7 @@ struct Worker {
     anchor_song_ms: f64,
     speed: f64,
     mode: NoteMode,
+    key_mode: KeyMode,
     transpose_override: Option<i32>,
     hold: Duration,
     instrument: Instrument,
@@ -350,6 +354,7 @@ impl Worker {
                 self.speed = speed.clamp(0.05, 16.0);
             }
             Command::SetMode(mode) => self.mode = mode,
+            Command::SetKeyMode(key_mode) => self.key_mode = key_mode,
             Command::SetTranspose(transpose) => self.transpose_override = transpose,
             Command::SetHold(hold) => {
                 self.hold = hold;
@@ -492,8 +497,9 @@ impl Worker {
                 return;
             };
 
-            let transpose = self.transpose_override.unwrap_or(song.transpose);
+            let transpose = self.transpose_override.unwrap_or(song.transpose) + song.octave_shift;
             let mode = self.mode;
+            let key_mode = self.key_mode;
             let live = self.state.live.load(Ordering::SeqCst);
             let preview = self.state.preview.load(Ordering::SeqCst);
 
@@ -518,7 +524,7 @@ impl Worker {
                     continue;
                 }
 
-                let chord = map_note(mode, event.note, transpose);
+                let chord = map_note(key_mode, mode, event.note, transpose);
                 if live {
                     if let Some(keyboard) = self.keyboard.as_mut() {
                         if let Err(e) = keyboard.tap(chord) {
@@ -598,6 +604,7 @@ mod tests {
                 .collect(),
             duration_secs: note_times.last().copied().unwrap_or(0) as f64 / 1000.0,
             transpose: 0,
+            octave_shift: 0,
             tempo_us_per_qn: 500_000,
             ticks_per_quarter: 480,
         }

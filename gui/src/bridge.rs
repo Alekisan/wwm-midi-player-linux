@@ -27,6 +27,7 @@ pub mod qobject {
         #[qproperty(bool, live)]
         #[qproperty(bool, preview)]
         #[qproperty(i32, instrument)]
+        #[qproperty(i32, key_mode)]
         #[qproperty(bool, game_running)]
         #[qproperty(QStringList, songs)]
         #[qproperty(QStringList, song_paths)]
@@ -64,6 +65,8 @@ pub mod qobject {
         #[qinvokable]
         fn choose_instrument(self: Pin<&mut PlayerBridge>, index: i32);
         #[qinvokable]
+        fn choose_key_mode(self: Pin<&mut PlayerBridge>, index: i32);
+        #[qinvokable]
         fn apply_speed(self: Pin<&mut PlayerBridge>, value: f64);
         #[qinvokable]
         fn select_song(self: Pin<&mut PlayerBridge>, index: i32);
@@ -86,6 +89,7 @@ use std::sync::mpsc::Receiver;
 use std::sync::Arc;
 use std::time::Duration;
 use wwm_engine::midi::{load_file, NoteKind};
+use wwm_engine::KeyMode;
 use wwm_player::{Command, Instrument, Player, PlayerEvent};
 use wwm_input::{uinput_accessible, UDEV_RULE_CONTENT, UDEV_RULE_PATH};
 
@@ -124,6 +128,7 @@ pub struct PlayerBridgeRust {
     live: bool,
     preview: bool,
     instrument: i32,
+    key_mode: i32,
     game_running: bool,
     game_detected_flag: Arc<AtomicBool>,
     songs: QStringList,
@@ -163,6 +168,7 @@ impl Default for PlayerBridgeRust {
             live: false,
             preview: true,
             instrument: 0,
+            key_mode: 0,
             game_running: false,
             game_detected_flag,
             songs,
@@ -494,6 +500,17 @@ impl qobject::PlayerBridge {
             .unwrap_or(Instrument::Guqin);
         self.player.set_instrument(inst);
         self.as_mut().set_instrument(index);
+    }
+
+    /// Switch the keyboard layout: 0 = 21-key (natural notes), 1 = 36-key (chromatic).
+    pub fn choose_key_mode(mut self: Pin<&mut Self>, index: i32) {
+        let key_mode = if index == 1 {
+            KeyMode::ThirtySix
+        } else {
+            KeyMode::TwentyOne
+        };
+        self.player.send(Command::SetKeyMode(key_mode));
+        self.as_mut().set_key_mode(index);
     }
 
     pub fn apply_speed(mut self: Pin<&mut Self>, value: f64) {

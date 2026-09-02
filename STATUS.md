@@ -40,6 +40,11 @@ All four phases are **complete and working**, plus the audio-preview feature.
   five instruments. SoundFonts resolved from project `soundfonts/` first, then
   `~/.local/share/where-winds-meet-player/soundfonts/`. Preset selected via
   Bank Select (CC32) + Program Change.
+- **Key layout (21/36):** the game's Free Play mode is 21 natural notes by default,
+  toggled to 36 chromatic notes with F1. Both are supported: `KeyMode::TwentyOne`
+  (6 key names × 3 octaves, no modifiers) and `KeyMode::ThirtySix` (12 semitones,
+  Shift/Ctrl accidentals). The GUI has a "21-key/36-key" combo and the CLI a
+  `--keys` flag; both default to 21-key.
 
 ### SoundFonts
 
@@ -80,10 +85,18 @@ All four phases are **complete and working**, plus the audio-preview feature.
 
 1. **Authentic Konghou + Fangxiang** soundfonts. Either map a preset from
    `DSK Asian DreamZ`/`ACCURATE_SF2` or source dedicated `konghou.sf2`/`fangxiang.sf2`.
-2. **36-key octave collapse.** `octave_of()` clamps everything below MIDI 60 into
-   the low row, so wide-range pieces collapse many pitches onto the same game key
-   (notes 36/48/60 all → `n`). Faithful port of the reference, but loses octave
-   detail. Tune if preview sounds flat.
+2. **Octave collapse / tessitura centering** — **DONE**. The 21-key and 36-key
+   layouts are both 3-octave grids (C3–B5), so wide-range pieces previously
+   folded out-of-range octaves onto the boundary rows. Now `parse()` computes a
+   static per-song octave fold (`Song::octave_shift`, a multiple of ±12) via
+   `detect_octave_shift()` in `engine/src/midi.rs`: it scans whole-octave shifts
+   and picks the one that centers the song's tessitura inside the window,
+   minimizing how many notes collapse (ties prefer the smallest shift, so pieces
+   that already fit are untouched). The fold is applied on top of the semitone
+   transpose at map time in the player and the CLI's `inspect`; the GUI's
+   transpose readout still shows the semitone value only. The audio preview keeps
+   using the real MIDI pitches. Remaining: subjective "does it sound flat" check
+   against real pieces.
 3. ~~Game detection against the real Proton process~~ **DONE** — verified live on
    `oldalienware`: `Go Live` goes gray→green when the game launches (Steam appid
    3564740, folder "Where Winds Meet", exe `Engine/Binaries/Win64r/wwm.exe`, under

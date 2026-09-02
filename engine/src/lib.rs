@@ -8,5 +8,5 @@
 pub mod mapping;
 pub mod midi;
 
-pub use mapping::{KeyChord, NoteMode};
+pub use mapping::{KeyChord, KeyMode, NoteMode};
 pub use midi::{MidiError, NoteEvent, NoteKind, Song};
