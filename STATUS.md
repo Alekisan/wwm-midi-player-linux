@@ -78,22 +78,26 @@ All four phases are **complete and working**, plus the audio-preview feature.
 | Guqin 古琴 | OLPC_Guzheng | 1/107 |
 | Pipa 琵琶 | MFA_Pipa | 32/105 |
 | Erhu 二胡 | FS_Erhu_v2 | 8/110 |
-| Konghou 箜篌 | FluidR3 GM fallback | 0/46 (Orchestral Harp) |
-| Fangxiang 方響 | FluidR3 GM fallback | 0/9 (Glockenspiel) |
+| Konghou 箜篌 | ACCURATE_SF2_AiX_CTX800 | 32/46 (Harp) |
+| Fangxiang 方響 | ACCURATE_SF2_AiX_CTX800 | 32/98 (VibeBell) |
 
 ## Open / deferred (future sessions)
 
-1. **Authentic Konghou + Fangxiang** soundfonts. Best candidates are in
-   `ACCURATE_SF2_AiX_CTX800.SF2`: Konghou → `008-107 Zheng 1` (plucked Chinese
-   zither) or `032-046 Harp`; Fangxiang → `032-098 VibeBell` (resonant bright
-   metallophone) or `001-009 Glocken.`. **Blocker:** the preview uses `rustysynth`
-   1.3.6, which refuses to load ACCURATE_SF2 — (a) a nested `LIST` chunk in the
-   INFO header (removable; stripped copy loads fine in fluidsynth), and (b) a
-   strict `sanity_check` that rejects some sample-loop regions in the font
-   (`end`/`end_loop` vs `wave_data.len()`, `start_loop`/`end_loop` ordering).
-   Path forward: either vendor `rustysynth` via `[patch.crates-io]` with a lenient
-   INFO/`sdta` parser + sanity check, or preprocess the font to clamp bad loop
-   points. DSK Asian DreamZ and FluidR3 have no usable harp/metallophone presets.
+1. **Authentic Konghou + Fangxiang** soundfonts — **DONE**. Mapped against
+   `ACCURATE_SF2_AiX_CTX800.SF2`: Konghou → `032-046 Harp`, Fangxiang →
+   `032-098 VibeBell` (added to `SPECIFIC_FONTS` in `preview_synth/src/lib.rs`).
+   To make rustysynth load that font, `rustysynth` 1.3.6 is now **vendored** under
+   `vendor/rustysynth` and swapped in via `[patch.crates-io]` with two lenient
+   changes: (a) the INFO parser now *skips* unknown sub-chunks (including the
+   nested `LIST xdta` chunk this font embeds) instead of erroring on
+   `ListContainsUnknownId`; (b) `sanity_check` now *normalizes* degenerate loop
+   points — regions marked looping whose `start_loop >= end_loop` (a common
+   "no loop" convention this font uses) are forced to `NoLoop`, instead of
+   failing, so the oscillator plays the sample straight through. Verified by
+   `accurate_sf2_loads_konghou_and_fangxiang` (loads the font, selects bank/patch,
+   renders an audible C4). Note these patch choices are approximations (a Western
+   concert harp for 箜篌, a resonant metallophone for 方響); the `SPECIFIC_FONTS`
+   table is the place to retune them.
 2. **Octave collapse / tessitura centering** — **DONE**. The 21-key and 36-key
    layouts are both 3-octave grids (C3–B5), so wide-range pieces previously
    folded out-of-range octaves onto the boundary rows. Now `parse()` computes a

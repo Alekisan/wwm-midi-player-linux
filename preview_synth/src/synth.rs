@@ -353,6 +353,40 @@ mod tests {
     }
 
     #[test]
+    fn accurate_sf2_loads_konghou_and_fangxiang() {
+        let konghou = match resolve_soundfont(Instrument::Konghou) {
+            Ok(c) if c.specific => c,
+            _ => {
+                eprintln!("skipping: no ACCURATE_SF2 font available");
+                return;
+            }
+        };
+        assert_eq!(konghou.bank, 32);
+        assert_eq!(konghou.patch, 46);
+
+        let fangxiang = resolve_soundfont(Instrument::Fangxiang).unwrap();
+        assert!(fangxiang.specific);
+        assert_eq!(fangxiang.bank, 32);
+        assert_eq!(fangxiang.patch, 98);
+
+        let file = File::open(&konghou.path).unwrap();
+        let font = SoundFont::new(&mut BufReader::new(file)).unwrap();
+        let font = Arc::new(font);
+
+        let mut settings = SynthesizerSettings::new(44100);
+        settings.block_size = BLOCK_SIZE;
+        settings.maximum_polyphony = 64;
+        let mut synth = Synthesizer::new(&font, &settings).unwrap();
+
+        synth.process_midi_message(0, 0xB0, 32, konghou.bank);
+        synth.process_midi_message(0, PROGRAM_CHANGE, konghou.patch, 0);
+        synth.note_on(0, 60, 100);
+        let p = peak(&mut synth, 10);
+        assert!(p > 0.001, "expected audible sample for Konghou, peak={p}");
+        synth.note_off_all(true);
+    }
+
+    #[test]
     fn synth_renders_audible_audio() {
         let Some(font) = load_font() else {
             eprintln!("skipping: no FluidR3_GM.sf2 installed");
