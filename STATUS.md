@@ -83,8 +83,17 @@ All four phases are **complete and working**, plus the audio-preview feature.
 
 ## Open / deferred (future sessions)
 
-1. **Authentic Konghou + Fangxiang** soundfonts. Either map a preset from
-   `DSK Asian DreamZ`/`ACCURATE_SF2` or source dedicated `konghou.sf2`/`fangxiang.sf2`.
+1. **Authentic Konghou + Fangxiang** soundfonts. Best candidates are in
+   `ACCURATE_SF2_AiX_CTX800.SF2`: Konghou → `008-107 Zheng 1` (plucked Chinese
+   zither) or `032-046 Harp`; Fangxiang → `032-098 VibeBell` (resonant bright
+   metallophone) or `001-009 Glocken.`. **Blocker:** the preview uses `rustysynth`
+   1.3.6, which refuses to load ACCURATE_SF2 — (a) a nested `LIST` chunk in the
+   INFO header (removable; stripped copy loads fine in fluidsynth), and (b) a
+   strict `sanity_check` that rejects some sample-loop regions in the font
+   (`end`/`end_loop` vs `wave_data.len()`, `start_loop`/`end_loop` ordering).
+   Path forward: either vendor `rustysynth` via `[patch.crates-io]` with a lenient
+   INFO/`sdta` parser + sanity check, or preprocess the font to clamp bad loop
+   points. DSK Asian DreamZ and FluidR3 have no usable harp/metallophone presets.
 2. **Octave collapse / tessitura centering** — **DONE**. The 21-key and 36-key
    layouts are both 3-octave grids (C3–B5), so wide-range pieces previously
    folded out-of-range octaves onto the boundary rows. Now `parse()` computes a
