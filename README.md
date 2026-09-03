@@ -16,6 +16,9 @@ as ordinary hardware input.
 ## Features
 
 - **MIDI playback** — loads `.mid` / `.midi`, seeks, loops, and plays at adjustable speed.
+- **Persistent playlist** — an editable list of tracks (add files/folders, remove, reorder)
+  saved to disk and reloaded on startup; multi-select tracks to queue them for
+  sequential playback, with an optional loop.
 - **36-key mapping** — maps notes onto the game's keyboard layout (closest/raw note modes, auto or manual transpose).
 - **Live input injection** — a "Go Live" toggle sends keystrokes to the game via `/dev/uinput`.
 - **Local audio preview** — hear the song locally (Guqin, Pipa, Erhu, Konghou, Fangxiang) without the game running.
@@ -30,6 +33,7 @@ A Cargo workspace of decoupled crates (see [`DESIGN.md`](DESIGN.md) and [`STATUS
 | Crate | Role |
 |---|---|
 | `engine` | MIDI parsing (midly) + 36-key note → key mapping |
+| `playlist` | persistent, editable playlist model (JSON under `~/.config`) |
 | `input` | `/dev/uinput` virtual keyboard (evdev) |
 | `hotkeys` | ashpd Wayland global shortcuts |
 | `player` | transport core + timing thread + Go Live gating |

@@ -78,6 +78,14 @@ ApplicationWindow {
         onAccepted: bridge.load_file(selectedFile)
     }
 
+    FileDialog {
+        id: addFilesDialog
+        title: qsTr("Add MIDI files to the playlist")
+        fileMode: FileDialog.OpenFiles
+        nameFilters: [qsTr("MIDI files (*.mid *.midi)"), qsTr("All files (*)")]
+        onAccepted: bridge.add_files(selectedFiles)
+    }
+
     FolderDialog {
         id: folderDialog
         title: qsTr("Choose a folder of MIDI files")
@@ -307,13 +315,54 @@ ApplicationWindow {
                         font.bold: true
                     }
 
+                    Button {
+                        text: qsTr("Play selected")
+                        enabled: bridge.selection.length > 0
+                        onClicked: bridge.play_selected()
+                    }
+
+                    Button {
+                        text: bridge.loop_queue ? qsTr("Loop: On") : qsTr("Loop: Off")
+                        onClicked: bridge.toggle_loop()
+
+                        ToolTip.visible: hovered
+                        ToolTip.text: qsTr("Loop the selected tracks")
+                    }
+
                     Item { Layout.fillWidth: true }
 
+                    Button {
+                        text: qsTr("Add files…")
+                        flat: true
+                        onClicked: addFilesDialog.open()
+                    }
                     Button {
                         text: qsTr("Add folder…")
                         icon.name: "folder-open"
                         flat: true
                         onClicked: folderDialog.open()
+                    }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+
+                    Button {
+                        text: qsTr("Select all")
+                        flat: true
+                        onClicked: bridge.select_all()
+                    }
+                    Button {
+                        text: qsTr("Clear")
+                        flat: true
+                        onClicked: bridge.clear_selection()
+                    }
+
+                    Label {
+                        Layout.fillWidth: true
+                        text: bridge.selection.length + qsTr(" selected")
+                        opacity: 0.6
+                        horizontalAlignment: Text.AlignRight
                     }
                 }
 
@@ -334,11 +383,19 @@ ApplicationWindow {
                         contentItem: RowLayout {
                             spacing: 8
 
+                            CheckBox {
+                                checked: bridge.selection.indexOf(bridge.song_paths[index]) !== -1
+                                onToggled: bridge.set_selected(index, checked)
+
+                                ToolTip.visible: hovered
+                                ToolTip.text: qsTr("Select for queue playback")
+                            }
+
                             Label {
                                 text: index + 1
                                 opacity: 0.5
                                 font.family: "monospace"
-                                Layout.preferredWidth: 28
+                                Layout.preferredWidth: 20
                                 horizontalAlignment: Text.AlignRight
                             }
 
@@ -346,6 +403,24 @@ ApplicationWindow {
                                 text: modelData
                                 elide: Text.ElideMiddle
                                 Layout.fillWidth: true
+                            }
+
+                            ToolButton {
+                                icon.name: "go-up"
+                                enabled: index > 0
+                                onClicked: bridge.move_song(index, -1)
+
+                                ToolTip.visible: hovered
+                                ToolTip.text: qsTr("Move up")
+                            }
+
+                            ToolButton {
+                                icon.name: "go-down"
+                                enabled: index < bridge.songs.length - 1
+                                onClicked: bridge.move_song(index, 1)
+
+                                ToolTip.visible: hovered
+                                ToolTip.text: qsTr("Move down")
                             }
 
                             ToolButton {
@@ -361,7 +436,7 @@ ApplicationWindow {
 
                 Label {
                     visible: bridge.songs.length === 0
-                    text: qsTr("No MIDI files yet — use “Load MIDI…” or “Add folder…”")
+                    text: qsTr("No MIDI files yet — use “Add files…” or “Add folder…”")
                     opacity: 0.6
                     Layout.alignment: Qt.AlignHCenter
                 }

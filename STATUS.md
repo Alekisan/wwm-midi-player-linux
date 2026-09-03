@@ -14,6 +14,7 @@ All four phases are **complete and working**, plus the audio-preview feature.
 | Crate | Role | Status |
 |---|---|---|
 | `engine` | MIDI parsing (midly) + 36-key note→key mapping | done |
+| `playlist` | persistent editable playlist (JSON store, `~/.config/where-winds-meet-player/playlist.json`) | done |
 | `input` | `/dev/uinput` virtual keyboard (evdev) | done |
 | `hotkeys` | ashpd Wayland global shortcuts (Play/Pause, Stop) | done |
 | `player` | transport core + timing thread + Go Live gating | done |
@@ -29,6 +30,24 @@ All four phases are **complete and working**, plus the audio-preview feature.
 
 ### Key implementation notes
 
+- **Persistent playlist (queue playback + loop):** the playlist is a decoupled
+  `playlist` crate that serializes an ordered list of absolute `.mid` paths to
+  JSON at `~/.config/where-winds-meet-player/playlist.json` (`$XDG_CONFIG_HOME`
+  honored). The GUI bridge owns a `Playlist` instance (in a `RefCell`, since the
+  cxx-qt QObject only `Deref`s — not `DerefMut` — to the Rust struct) and projects
+  it into the parallel `songs`/`song_paths` `QStringList`s the `ListView` binds to.
+  Tracks are added via "Add files…" (multi-select `FileDialog`, `add_files`)
+  or "Add folder…" (now *appends* rather than replaces), removed, and reordered
+  (per-row up/down → `move_song`). Each edit persists + refreshes the views.
+  **Selection** is a `QStringList` of selected paths (path-keyed, so stable across
+  reorder); checkboxes drive `set_selected`. **"Play selected"** snapshots the
+  selected tracks (in playlist order) into an internal queue and plays them in
+  sequence: on `PlayerEvent::Finished` the bridge's `advance_queue` loads the next
+  queued path and auto-plays, wrapping to the start when `loop_queue` is on
+  ("Loop: On/Off" button). `current_index` (the highlight) is relocated by path
+  so it survives reorder/removal. A manual single-file load (`load_file` /
+  `select_song`) clears the queue, so auto-advance only applies to explicitly
+  queued playback.
 - **cxx-qt naming gotcha:** both QML *properties* and *invokables* are exposed as
   **snake_case** (e.g. `game_running`, `note_count`, `load_file`, `toggle_play_pause`).
   Do not use camelCase in QML.

@@ -1,0 +1,10 @@
+[package]
+name = "wwm-playlist"
+description = "Persistent editable MIDI playlist storage for the Wayland MIDI player"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true

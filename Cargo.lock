@@ -2160,6 +2160,7 @@ dependencies = [
  "wwm-engine",
  "wwm-input",
  "wwm-player",
+ "wwm-playlist",
  "wwm-preview-synth",
 ]
 
@@ -2189,6 +2190,14 @@ dependencies = [
  "wwm-engine",
  "wwm-input",
  "wwm-preview-synth",
+]
+
+[[package]]
+name = "wwm-playlist"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

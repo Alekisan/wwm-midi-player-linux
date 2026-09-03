@@ -30,6 +30,8 @@ pub mod qobject {
         #[qproperty(bool, game_running)]
         #[qproperty(QStringList, songs)]
         #[qproperty(QStringList, song_paths)]
+        #[qproperty(QStringList, selection)]
+        #[qproperty(bool, loop_queue)]
         #[qproperty(i32, current_index)]
         #[qproperty(f64, speed)]
         #[qproperty(i32, note_count)]
@@ -70,7 +72,21 @@ pub mod qobject {
         #[qinvokable]
         fn remove_song(self: Pin<&mut PlayerBridge>, index: i32);
         #[qinvokable]
+        fn move_song(self: Pin<&mut PlayerBridge>, index: i32, delta: i32);
+        #[qinvokable]
+        fn add_files(self: Pin<&mut PlayerBridge>, paths: &QStringList);
+        #[qinvokable]
         fn add_folder(self: Pin<&mut PlayerBridge>, path: &QString);
+        #[qinvokable]
+        fn set_selected(self: Pin<&mut PlayerBridge>, index: i32, checked: bool);
+        #[qinvokable]
+        fn select_all(self: Pin<&mut PlayerBridge>);
+        #[qinvokable]
+        fn clear_selection(self: Pin<&mut PlayerBridge>);
+        #[qinvokable]
+        fn play_selected(self: Pin<&mut PlayerBridge>);
+        #[qinvokable]
+        fn toggle_loop(self: Pin<&mut PlayerBridge>);
         #[qinvokable]
         fn install_uinput_rule(self: Pin<&mut PlayerBridge>);
         #[qinvokable]
@@ -80,6 +96,7 @@ pub mod qobject {
 
 use core::pin::Pin;
 use cxx_qt_lib::{QString, QStringList};
+use std::cell::{Cell, RefCell};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::Receiver;
@@ -87,8 +104,9 @@ use std::sync::Arc;
 use std::time::Duration;
 use wwm_engine::midi::{load_file, NoteKind};
 use wwm_engine::KeyMode;
-use wwm_player::{Command, Instrument, Player, PlayerEvent};
 use wwm_input::{uinput_accessible, UDEV_RULE_CONTENT, UDEV_RULE_PATH};
+use wwm_player::{Command, Instrument, Player, PlayerEvent};
+use wwm_playlist::Playlist;
 
 /// Path a signed udev rule is staged to before `pkexec` copies it into
 /// `/etc/udev/rules.d`. Kept in `/tmp` so the polkit-elevated process can read it
@@ -129,6 +147,11 @@ pub struct PlayerBridgeRust {
     game_detected_flag: Arc<AtomicBool>,
     songs: QStringList,
     song_paths: QStringList,
+    selection: QStringList,
+    loop_queue: bool,
+    playlist: RefCell<Playlist>,
+    queue: RefCell<Vec<String>>,
+    queue_pos: Cell<usize>,
     current_index: i32,
     speed: f64,
     note_count: i32,
@@ -147,7 +170,17 @@ impl Default for PlayerBridgeRust {
         // Guqin selected.
         player.set_preview(true);
         player.set_instrument(Instrument::Guqin);
-        let (songs, song_paths) = scan_dirs(&default_scan_dirs());
+
+        // Persistent playlist: load the saved list if present, else seed it from
+        // the default scan directories (the pre-playlist behavior).
+        let playlist = {
+            let mut p = Playlist::load(&Playlist::default_path());
+            if p.entries.is_empty() {
+                p.entries = scan_dir_paths(&default_scan_dirs());
+            }
+            p
+        };
+        let (songs, song_paths) = project_playlist(&playlist);
 
         // Watch for the game process in the background so the Go Live button
         // can be enabled/disabled without blocking the GUI.
@@ -168,6 +201,11 @@ impl Default for PlayerBridgeRust {
             game_detected_flag,
             songs,
             song_paths,
+            selection: QStringList::default(),
+            loop_queue: false,
+            playlist: RefCell::new(playlist),
+            queue: RefCell::new(Vec::new()),
+            queue_pos: Cell::new(0),
             current_index: -1,
             speed: 1.0,
             note_count: 0,
@@ -292,58 +330,69 @@ fn install_uinput_rule_via_pkexec() -> std::io::Result<bool> {
         Ok(st) => Ok(st.success()),
         Err(e) => {
             // Reproduce a readable message the caller can surface in the status bar.
-            Err(std::io::Error::new(e.kind(), format!("could not run pkexec: {e}")))
+            Err(std::io::Error::new(
+                e.kind(),
+                format!("could not run pkexec: {e}"),
+            ))
         }
     }
 }
 
-/// Scan directories (one level deep) for `.mid` / `.midi` files.
-fn scan_dirs(dirs: &[std::path::PathBuf]) -> (QStringList, QStringList) {
-    let mut names: Vec<(String, String)> = Vec::new();
+/// True when a path has a `.mid` / `.midi` extension (case-insensitive).
+fn is_midi_path(path: &Path) -> bool {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .map(|e| matches!(e.to_ascii_lowercase().as_str(), "mid" | "midi"))
+        .unwrap_or(false)
+}
+
+/// Scan directories (one level deep) for `.mid` / `.midi` files, returning
+/// absolute paths sorted by stem.
+fn scan_dir_paths(dirs: &[std::path::PathBuf]) -> Vec<String> {
+    let mut paths: Vec<String> = Vec::new();
     for dir in dirs {
         let Ok(entries) = std::fs::read_dir(dir) else {
             continue;
         };
         for entry in entries.flatten() {
             let path = entry.path();
-            let is_midi = path
-                .extension()
-                .and_then(|e| e.to_str())
-                .map(|e| matches!(e.to_ascii_lowercase().as_str(), "mid" | "midi"))
-                .unwrap_or(false);
-            if !is_midi {
-                continue;
+            if is_midi_path(&path) {
+                paths.push(path.to_string_lossy().into_owned());
             }
-            let name = path
-                .file_stem()
-                .map(|s| s.to_string_lossy().to_string())
-                .unwrap_or_default();
-            names.push((name, path.to_string_lossy().to_string()));
         }
     }
-    names.sort_by(|a, b| a.0.to_lowercase().cmp(&b.0.to_lowercase()));
+    paths.sort_by(|a, b| {
+        Playlist::name_of(a)
+            .to_lowercase()
+            .cmp(&Playlist::name_of(b).to_lowercase())
+    });
+    paths
+}
 
-    let names_list: Vec<QString> = names
+/// Convert a [`Playlist`] into the parallel `(names, paths)` string lists that
+/// the QML `ListView` is bound to.
+fn project_playlist(playlist: &Playlist) -> (QStringList, QStringList) {
+    let names: Vec<QString> = playlist
+        .names()
         .iter()
-        .map(|(n, _)| QString::from(n.as_str()))
+        .map(|n| QString::from(n.as_str()))
         .collect();
-    let paths_list: Vec<QString> = names
+    let paths: Vec<QString> = playlist
+        .entries
         .iter()
-        .map(|(_, p)| QString::from(p.as_str()))
+        .map(|p| QString::from(p.as_str()))
         .collect();
     (
-        QStringList::from_iter(names_list.iter()),
-        QStringList::from_iter(paths_list.iter()),
+        QStringList::from_iter(names.iter()),
+        QStringList::from_iter(paths.iter()),
     )
 }
 
 impl qobject::PlayerBridge {
-    /// Load a `.mid` file. Accepts either a plain path or a `file://` URL.
-    pub fn load_file(mut self: Pin<&mut Self>, path: &QString) {
-        let raw = path.to_string();
-        let path_str = raw.strip_prefix("file://").unwrap_or(&raw).to_string();
-
-        match load_file(&path_str) {
+    /// Parse and load a song into the player, mirroring its metadata into the UI.
+    /// Returns `Err` (with a status message set) when the file fails to load.
+    fn load_song(mut self: Pin<&mut Self>, path: &str) -> Result<(), ()> {
+        match load_file(path) {
             Ok(song) => {
                 let notes = song
                     .events
@@ -353,10 +402,10 @@ impl qobject::PlayerBridge {
                 let bpm = (60_000_000 / song.tempo_us_per_qn) as i32;
                 let transpose = song.transpose;
                 let duration = song.duration_secs;
-                let name = std::path::Path::new(&path_str)
+                let name = std::path::Path::new(path)
                     .file_name()
                     .map(|s| s.to_string_lossy().to_string())
-                    .unwrap_or_else(|| path_str.clone());
+                    .unwrap_or_else(|| path.to_string());
 
                 self.player.load(song);
 
@@ -368,38 +417,130 @@ impl qobject::PlayerBridge {
                 self.as_mut().set_position(0.0);
                 self.as_mut().set_loaded(true);
                 self.as_mut().set_status(QString::from("Ready"));
+                Ok(())
             }
             Err(e) => {
                 self.as_mut().set_loaded(false);
                 self.as_mut()
                     .set_status(QString::from(format!("Error: {e}").as_str()));
+                Err(())
             }
         }
     }
 
-    /// Load the song at `index` in the playlist.
-    pub fn select_song(mut self: Pin<&mut Self>, index: i32) {
-        let Some(path) = self.song_paths.get(index as isize) else {
+    /// Save the current playlist to disk (best-effort; errors are ignored).
+    fn persist(&self) {
+        let _ = self.playlist.borrow().save(&Playlist::default_path());
+    }
+
+    /// Rebuild the QML-visible name/path lists from the playlist.
+    fn refresh_views(mut self: Pin<&mut Self>) {
+        let (songs, song_paths) = project_playlist(&self.playlist.borrow());
+        self.as_mut().set_songs(songs);
+        self.as_mut().set_song_paths(song_paths);
+    }
+
+    /// Replace the selection `QStringList` from a vector of paths.
+    fn set_selection_list(mut self: Pin<&mut Self>, paths: Vec<String>) {
+        let q: Vec<QString> = paths.iter().map(|p| QString::from(p.as_str())).collect();
+        self.as_mut()
+            .set_selection(QStringList::from_iter(q.iter()));
+    }
+
+    /// Highlight the playlist row whose path matches the given track.
+    fn set_current_for_path(mut self: Pin<&mut Self>, path: &str) {
+        let pos = self
+            .playlist
+            .borrow()
+            .entries
+            .iter()
+            .position(|p| p == path)
+            .map(|i| i as i32)
+            .unwrap_or(-1);
+        self.as_mut().set_current_index(pos);
+    }
+
+    /// Load the queued track at `queue_pos` and start playing it.
+    fn play_queue_current(mut self: Pin<&mut Self>) {
+        let path = self.queue.borrow().get(self.queue_pos.get()).cloned();
+        let Some(path) = path else {
             return;
         };
-        let path = path.to_string();
+        if self.as_mut().load_song(&path).is_ok() {
+            self.as_mut().set_current_for_path(&path);
+            self.player.play();
+        }
+    }
+
+    /// Advance the queue after a track finishes, honoring loop. Called when the
+    /// player reports `Finished`.
+    fn advance_queue(mut self: Pin<&mut Self>) {
+        let (is_empty, len) = {
+            let q = self.queue.borrow();
+            (q.is_empty(), q.len())
+        };
+        if is_empty {
+            self.as_mut().set_status(QString::from("Finished"));
+            return;
+        }
+        let next = self.queue_pos.get() + 1;
+        if next < len {
+            self.queue_pos.set(next);
+            self.as_mut().play_queue_current();
+        } else if self.loop_queue {
+            self.queue_pos.set(0);
+            self.as_mut().play_queue_current();
+        } else {
+            self.queue_pos.set(0);
+            self.as_mut().set_status(QString::from("Finished"));
+        }
+    }
+
+    /// Load a `.mid` file. Accepts either a plain path or a `file://` URL.
+    /// A manual load clears any pending queue: the file plays alone (no
+    /// auto-advance). To play several tracks in sequence, use `play_selected`.
+    pub fn load_file(mut self: Pin<&mut Self>, path: &QString) {
+        let raw = path.to_string();
+        let path_str = raw.strip_prefix("file://").unwrap_or(&raw).to_string();
+        self.queue.borrow_mut().clear();
+        self.queue_pos.set(0);
+        let _ = self.as_mut().load_song(&path_str);
+    }
+
+    /// Load the song at `index` in the playlist.
+    pub fn select_song(mut self: Pin<&mut Self>, index: i32) {
+        let Some(path) = self.playlist.borrow().entries.get(index as usize).cloned() else {
+            return;
+        };
+        self.queue.borrow_mut().clear();
+        self.queue_pos.set(0);
         self.as_mut().set_current_index(index);
-        self.as_mut().load_file(&QString::from(path.as_str()));
+        let _ = self.as_mut().load_song(&path);
     }
 
     /// Remove the song at `index` from the playlist.
     pub fn remove_song(mut self: Pin<&mut Self>, index: i32) {
-        let mut names: Vec<QString> = self.songs.iter().map(QString::clone).collect();
-        let mut paths: Vec<QString> = self.song_paths.iter().map(QString::clone).collect();
         let i = index as usize;
-        if i < names.len() {
-            names.remove(i);
-            paths.remove(i);
+        let removed = self.playlist.borrow_mut().remove(i);
+        let Some(removed) = removed else {
+            return;
+        };
+        self.persist();
+        self.as_mut().refresh_views();
+
+        // Drop the removed path from the selection and any in-flight queue.
+        let sel: Vec<String> = self
+            .selection
+            .iter()
+            .map(|q| q.to_string())
+            .filter(|p| *p != removed)
+            .collect();
+        self.as_mut().set_selection_list(sel);
+        let in_queue = self.queue.borrow().iter().any(|p| *p == removed);
+        if in_queue {
+            self.queue.borrow_mut().clear();
+            self.queue_pos.set(0);
         }
-        self.as_mut()
-            .set_songs(QStringList::from_iter(names.iter()));
-        self.as_mut()
-            .set_song_paths(QStringList::from_iter(paths.iter()));
 
         // Keep the "now playing" highlight correct after removal.
         let current = self.current_index;
@@ -410,14 +551,130 @@ impl qobject::PlayerBridge {
         }
     }
 
-    /// Add a folder to the playlist (one level deep, .mid/.midi files).
+    /// Move the song at `index` by `delta` (+1 down, -1 up) in the playlist.
+    pub fn move_song(mut self: Pin<&mut Self>, index: i32, delta: i32) {
+        let len = self.playlist.borrow().entries.len() as i32;
+        if len < 2 {
+            return;
+        }
+        let from = index;
+        let to = (index + delta).clamp(0, len - 1);
+        if from == to {
+            return;
+        }
+        let current_path = if self.current_index >= 0 {
+            self.playlist
+                .borrow()
+                .entries
+                .get(self.current_index as usize)
+                .cloned()
+        } else {
+            None
+        };
+        self.playlist
+            .borrow_mut()
+            .move_entry(from as usize, to as usize);
+        self.persist();
+        self.as_mut().refresh_views();
+        // The moved track may have dragged the highlighted row along with it.
+        if let Some(path) = current_path {
+            self.as_mut().set_current_for_path(&path);
+        }
+    }
+
+    /// Add individual `.mid` files to the playlist (multi-select file dialog).
+    pub fn add_files(mut self: Pin<&mut Self>, paths: &QStringList) {
+        let mut added = 0;
+        for p in paths.iter() {
+            let raw = p.to_string();
+            let path = raw.strip_prefix("file://").unwrap_or(&raw).to_string();
+            if is_midi_path(Path::new(&path)) {
+                self.playlist.borrow_mut().add(path);
+                added += 1;
+            }
+        }
+        if added > 0 {
+            self.persist();
+            self.as_mut().refresh_views();
+        }
+    }
+
+    /// Add every `.mid`/`.midi` file in a folder (one level deep) to the playlist.
     pub fn add_folder(mut self: Pin<&mut Self>, path: &QString) {
         let raw = path.to_string();
         let path_str = raw.strip_prefix("file://").unwrap_or(&raw).to_string();
-        let (songs, song_paths) = scan_dirs(&[std::path::PathBuf::from(path_str)]);
-        self.as_mut().set_songs(songs);
-        self.as_mut().set_song_paths(song_paths);
-        self.as_mut().set_current_index(-1);
+        let dir_paths = scan_dir_paths(&[std::path::PathBuf::from(path_str)]);
+        if dir_paths.is_empty() {
+            return;
+        }
+        let mut added = 0;
+        {
+            let mut pl = self.playlist.borrow_mut();
+            for p in dir_paths {
+                if !pl.entries.contains(&p) {
+                    pl.add(p);
+                    added += 1;
+                }
+            }
+        }
+        if added > 0 {
+            self.persist();
+            self.as_mut().refresh_views();
+        }
+    }
+
+    /// Add or remove the track at `index` from the play queue selection.
+    pub fn set_selected(mut self: Pin<&mut Self>, index: i32, checked: bool) {
+        let Some(path) = self.playlist.borrow().entries.get(index as usize).cloned() else {
+            return;
+        };
+        let mut sel: Vec<String> = self.selection.iter().map(|q| q.to_string()).collect();
+        if checked {
+            if !sel.iter().any(|p| *p == path) {
+                sel.push(path);
+            }
+        } else {
+            sel.retain(|p| *p != path);
+        }
+        self.as_mut().set_selection_list(sel);
+    }
+
+    /// Select every track in the playlist.
+    pub fn select_all(mut self: Pin<&mut Self>) {
+        let paths = self.playlist.borrow().entries.clone();
+        self.as_mut().set_selection_list(paths);
+    }
+
+    /// Clear the selection.
+    pub fn clear_selection(mut self: Pin<&mut Self>) {
+        self.as_mut().set_selection_list(Vec::new());
+    }
+
+    /// Play the selected tracks one after another, in playlist order.
+    pub fn play_selected(mut self: Pin<&mut Self>) {
+        let sel: Vec<String> = self.selection.iter().map(|q| q.to_string()).collect();
+        let queue: Vec<String> = self
+            .playlist
+            .borrow()
+            .entries
+            .iter()
+            .filter(|p| sel.contains(p))
+            .cloned()
+            .collect();
+        if queue.is_empty() {
+            self.as_mut()
+                .set_status(QString::from("No tracks selected"));
+            return;
+        }
+        *self.queue.borrow_mut() = queue;
+        self.queue_pos.set(0);
+        self.as_mut().play_queue_current();
+    }
+
+    /// Flip the "loop the queue" toggle.
+    pub fn toggle_loop(mut self: Pin<&mut Self>) {
+        let on = !self.loop_queue;
+        self.as_mut().set_loop_queue(on);
     }
 
     pub fn play(self: Pin<&mut Self>) {
@@ -531,7 +788,7 @@ impl qobject::PlayerBridge {
                 }
                 PlayerEvent::Paused => self.as_mut().set_status(QString::from("Paused")),
                 PlayerEvent::Stopped => self.as_mut().set_status(QString::from("Stopped")),
-                PlayerEvent::Finished => self.as_mut().set_status(QString::from("Finished")),
+                PlayerEvent::Finished => self.as_mut().advance_queue(),
                 PlayerEvent::Live(on) => {
                     let text = if on {
                         "LIVE - sending input to the game"
@@ -611,6 +868,27 @@ mod tests {
     fn strips_file_url_scheme() {
         assert_eq!(strip_file_url("file:///home/x/a.mid"), "/home/x/a.mid");
         assert_eq!(strip_file_url("/home/x/a.mid"), "/home/x/a.mid");
+    }
+
+    #[test]
+    fn is_midi_path_checks_extension_case_insensitively() {
+        use super::is_midi_path;
+        assert!(is_midi_path(std::path::Path::new("a.MID")));
+        assert!(is_midi_path(std::path::Path::new("b.midi")));
+        assert!(!is_midi_path(std::path::Path::new("c.txt")));
+    }
+
+    #[test]
+    fn scan_dir_paths_finds_midis_only() {
+        use super::scan_dir_paths;
+        let dir = std::env::temp_dir().join(format!("wwm-scan-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("a.mid"), b"x").unwrap();
+        std::fs::write(dir.join("b.midi"), b"x").unwrap();
+        std::fs::write(dir.join("c.txt"), b"x").unwrap();
+        let paths = scan_dir_paths(&[dir.clone()]);
+        assert_eq!(paths.len(), 2);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
