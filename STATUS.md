@@ -36,10 +36,14 @@ All four phases are **complete and working**, plus the audio-preview feature.
   green when ready, red when live. Detection scans `/proc` every 2s, excluding our
   own `wwm-*` processes, matching `wwm.exe` (plus "where winds meet"/"winds meet")
   in cmdline.
-- **Audio preview:** default-on (checkbox "Preview"), instrument dropdown for the
-  five instruments. SoundFonts resolved from project `soundfonts/` first, then
+- **Audio preview:** implicit, no UI toggle. It is on whenever the player is *not*
+  live and off while live (the Go Live button drives it: `go_live` / the
+  game-gone auto-drop both call `player.set_preview(!live)`). The instrument
+  dropdown (Guqin/Pipa/Erhu/Konghou/Fangxiang) stays enabled while not live and
+  grays out while live. SoundFonts resolved from project `soundfonts/` first, then
   `~/.local/share/where-winds-meet-player/soundfonts/`. Preset selected via
-  Bank Select (CC32) + Program Change.
+  Bank Select (CC32) + Program Change. (The old "Preview" checkbox and the
+  `preview` QML property / `toggle_preview` invokable were removed.)
 - **Key layout (21/36):** the game's Free Play mode is 21 natural notes by default,
   toggled to 36 chromatic notes with F1. Both are supported: `KeyMode::TwentyOne`
   (6 key names × 3 octaves, no modifiers) and `KeyMode::ThirtySix` (12 semitones,
@@ -51,7 +55,7 @@ All four phases are **complete and working**, plus the audio-preview feature.
 - Project `soundfonts/` (binary, git-ignored): `FS_Erhu_v2.sf2` (erhu 8/110),
   `MFA_Pipa.sf2` (pipa 32/105), `OLPC_Guzheng.sf2` (guzheng 1/107),
   `DSK Asian DreamZ.SF2` (multi: erhu 0/4, pipa 0/0, guzheng 0/3),
-  `ACCURATE_SF2_AiX_CTX800.SF2` (general GM library, unmapped so far).
+  `ACCURATE_SF2_AiX_CTX800.SF2` (Konghou 32/46 Harp, Fangxiang 32/98 VibeBell).
 - `~/.local/share/where-winds-meet-player/soundfonts/FluidR3_GM.sf2` + `FluidR3_GS.sf2`
   (installed from Arch `soundfont-fluid` package) = GM fallback.
 
@@ -115,8 +119,12 @@ All four phases are **complete and working**, plus the audio-preview feature.
    3564740, folder "Where Winds Meet", exe `Engine/Binaries/Win64r/wwm.exe`, under
    Proton), green↔red toggling while live, back to gray on exit. Detection matches
    `wwm.exe` plus "where winds meet"/"winds meet".
-4. **Live injection end-to-end with the game** (untested: `/dev/uinput` → Proton
-   game receiving the melody).
+4. ~~Live injection end-to-end with the game~~ **DONE** — tested live on
+   `oldalienware` with the game running under Proton. `wwm play test-scale.mid
+   --live --verbose` injected keystrokes that the game picked up, in **both** the
+   21-key and 36-key layouts (a C-major scale+melody, 19 notes, that maps to
+   obvious keys `a s d f g h j q …`). Notably `/dev/uinput` was already writable by
+   `maria` there (logind `uaccess` ACL), so no udev rule install was needed.
 
 ## Test / deploy machine
 
@@ -129,6 +137,10 @@ All four phases are **complete and working**, plus the audio-preview feature.
   `scp -r soundfonts oldalienware:~/` for audio preview. Only **two** executables
   exist (`wwm-gui`, `wwm`); libraries are compiled in, and a stale `wwm-cli`
   sits in `target/debug/` (ignore it).
+- As of the live-injection test, `oldalienware:~/` already has `wwm-gui`, `wwm`,
+  `soundfonts/` (all 5 SF2s), and a `test-scale.mid` smoke-test fixture. **The
+  deployed binaries predate the preview-checkbox removal**, so rebuild + re-copy
+  `wwm-gui` before relying on the latest behavior on that box.
 
 ## Git
 
