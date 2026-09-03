@@ -25,7 +25,6 @@ pub mod qobject {
         #[qproperty(bool, playing)]
         #[qproperty(bool, paused)]
         #[qproperty(bool, live)]
-        #[qproperty(bool, preview)]
         #[qproperty(i32, instrument)]
         #[qproperty(i32, key_mode)]
         #[qproperty(bool, game_running)]
@@ -60,8 +59,6 @@ pub mod qobject {
         fn seek_to(self: Pin<&mut PlayerBridge>, secs: f64);
         #[qinvokable]
         fn go_live(self: Pin<&mut PlayerBridge>, on: bool);
-        #[qinvokable]
-        fn toggle_preview(self: Pin<&mut PlayerBridge>, on: bool);
         #[qinvokable]
         fn choose_instrument(self: Pin<&mut PlayerBridge>, index: i32);
         #[qinvokable]
@@ -126,7 +123,6 @@ pub struct PlayerBridgeRust {
     playing: bool,
     paused: bool,
     live: bool,
-    preview: bool,
     instrument: i32,
     key_mode: i32,
     game_running: bool,
@@ -166,7 +162,6 @@ impl Default for PlayerBridgeRust {
             playing: false,
             paused: false,
             live: false,
-            preview: true,
             instrument: 0,
             key_mode: 0,
             game_running: false,
@@ -459,10 +454,8 @@ impl qobject::PlayerBridge {
 
         // Going live is exclusive with local audio preview: while live we only
         // inject keystrokes, and preview resumes automatically when we drop out
-        // of live, so the Preview checkbox tracks the Go Live button.
-        let preview = !on;
-        self.player.set_preview(preview);
-        self.as_mut().set_preview(preview);
+        // of live.
+        self.player.set_preview(!on);
     }
 
     /// Install the uinput udev rule via the authentication prompt, then re-check
@@ -491,12 +484,6 @@ impl qobject::PlayerBridge {
                     .set_status(QString::from(format!("Error: {e}").as_str()));
             }
         }
-    }
-
-    /// Toggle local audio preview.
-    pub fn toggle_preview(mut self: Pin<&mut Self>, on: bool) {
-        self.player.set_preview(on);
-        self.as_mut().set_preview(on);
     }
 
     /// Switch the preview instrument by index (matches Instrument::ALL order).
@@ -594,7 +581,6 @@ impl qobject::PlayerBridge {
         if !detected && live {
             self.player.set_live(false);
             self.player.set_preview(true);
-            self.as_mut().set_preview(true);
         }
     }
 }

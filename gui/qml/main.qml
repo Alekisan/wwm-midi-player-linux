@@ -190,16 +190,6 @@ ApplicationWindow {
                 onClicked: bridge.stop()
             }
 
-            CheckBox {
-                id: previewToggle
-                text: qsTr("Preview")
-                checked: bridge.preview
-                onToggled: bridge.toggle_preview(checked)
-
-                ToolTip.visible: hovered
-                ToolTip.text: qsTr("Play audio locally")
-            }
-
             ComboBox {
                 id: instrumentPicker
                 model: [
@@ -210,7 +200,7 @@ ApplicationWindow {
                     "Fangxiang (方響)",
                 ]
                 currentIndex: bridge.instrument
-                enabled: previewToggle.checked
+                enabled: !bridge.live
                 onActivated: bridge.choose_instrument(index)
 
                 ToolTip.visible: hovered
