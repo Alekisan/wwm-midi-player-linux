@@ -456,6 +456,13 @@ impl qobject::PlayerBridge {
             return;
         }
         self.player.set_live(on);
+
+        // Going live is exclusive with local audio preview: while live we only
+        // inject keystrokes, and preview resumes automatically when we drop out
+        // of live, so the Preview checkbox tracks the Go Live button.
+        let preview = !on;
+        self.player.set_preview(preview);
+        self.as_mut().set_preview(preview);
     }
 
     /// Install the uinput udev rule via the authentication prompt, then re-check
@@ -582,9 +589,12 @@ impl qobject::PlayerBridge {
         }
 
         // Can't inject into a game that isn't running — drop live if the game
-        // went away while we were live.
+        // went away while we were live, and restore audio preview so it tracks
+        // the (now off) live state.
         if !detected && live {
             self.player.set_live(false);
+            self.player.set_preview(true);
+            self.as_mut().set_preview(true);
         }
     }
 }
