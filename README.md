@@ -23,7 +23,8 @@ as ordinary hardware input.
 - **Live input injection** — a "Go Live" toggle sends keystrokes to the game via `/dev/uinput`.
 - **Local audio preview** — hear the song locally (Guqin, Pipa, Erhu, Konghou, Fangxiang) without the game running.
 - **Game detection** — a background watcher spots the running game and gates the "Go Live" button.
-- **Global hotkeys** — Play/Pause and Stop via the Wayland portal (ashpd).
+- **Global hotkeys** — Play/Pause and Stop via the Wayland portal (ashpd). Provided
+  by the development CLI only ([`CLI.md`](CLI.md)); the GUI has none by design.
 - **One-click setup** — if `/dev/uinput` isn't writable, the GUI offers to install a udev rule for you (via polkit).
 
 ## Architecture
@@ -39,7 +40,7 @@ A Cargo workspace of decoupled crates (see [`DESIGN.md`](DESIGN.md) and [`STATUS
 | `player` | transport core + timing thread + Go Live gating |
 | `preview_synth` | rustysynth + rodio audio preview |
 | `gui` | Qt6/QML front-end (cxx-qt) |
-| `cli` | `wwm` inspect/play/hotkeys subcommands |
+| `cli` | headless dev/diagnostic CLI (`wwm`: inspect/play/hotkeys); not shipped — see [`CLI.md`](CLI.md) |
 
 ## Requirements
 
@@ -49,9 +50,14 @@ A Cargo workspace of decoupled crates (see [`DESIGN.md`](DESIGN.md) and [`STATUS
 
 ## Build
 
+The app is a single binary, `wwm-gui`:
+
 ```sh
-cargo build --release
+cargo build --release -p wwm-gui
 ```
+
+`cargo build --release` builds the whole workspace, which also produces `wwm` — a
+headless development/diagnostic CLI that is **not** shipped (see [`CLI.md`](CLI.md)).
 
 ```sh
 cargo test --workspace
@@ -67,14 +73,11 @@ cargo run -p wwm-gui
 ./target/release/wwm-gui
 ```
 
-### CLI
+### CLI (development tool)
 
-```sh
-./target/release/wwm inspect song.mid          # print translated key events
-./target/release/wwm play song.mid             # play as a plain MIDI player
-./target/release/wwm play song.mid --live      # inject keystrokes into the game
-./target/release/wwm hotkeys                   # listen for global Play/Pause & Stop
-```
+`wwm` is a headless front-end for testing and diagnostics — **not part of
+releases**. It provides `inspect`, `play`, and the global `hotkeys`. See
+[`CLI.md`](CLI.md) for the full reference.
 
 ## uinput setup
 
@@ -98,10 +101,21 @@ sudo udevadm control --reload-rules && sudo udevadm trigger
 
 ## SoundFonts
 
-Audio preview uses instrument-specific SoundFonts from `soundfonts/` (git-ignored),
-falling back to a general MIDI library under
-`~/.local/share/where-winds-meet-player/soundfonts/`. See `STATUS.md` for the
-confirmed instrument → SoundFont (bank/patch) mappings.
+Audio preview uses one instrument-specific SoundFont per instrument, shipped in
+`soundfonts/` (all under redistribution-friendly licenses — see
+[`soundfonts/README.md`](soundfonts/README.md) for sources and attribution):
+
+| Instrument | Font | License |
+|---|---|---|
+| Guqin 古琴 | OLPC Guzheng | CC BY 3.0 |
+| Pipa 琵琶 | MFA Pipa | CC BY 3.0 |
+| Erhu 二胡 | FS Erhu v2 | CC BY 3.0 |
+| Konghou 箜篌 | FreePats Concert Harp | CC0 1.0 |
+| Fangxiang 方響 | FreePats Xylophone | CC0 1.0 |
+
+If an instrument-specific font is missing, the app falls back to a General MIDI
+bank (`FluidR3_GM.sf2` / `FluidR3_GS.sf2`, MIT) placed under
+`~/.local/share/where-winds-meet-player/soundfonts/`. No GM bank is bundled.
 
 ## License
 

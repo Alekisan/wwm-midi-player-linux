@@ -1,5 +1,8 @@
 /target
 **/*.rs.bk
 
-# SoundFont binary assets (not source; large)
-/soundfonts/
+# SoundFont binaries: only the redistribution-friendly ones are tracked and
+# shipped (see soundfonts/README.md). These two have licenses that do not permit
+# redistribution, so they stay local only.
+/soundfonts/ACCURATE_SF2_AiX_CTX800.SF2
+/soundfonts/DSK Asian DreamZ.SF2

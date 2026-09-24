@@ -151,8 +151,10 @@ const SPECIFIC_FONTS: &[(Instrument, &str, i32, i32)] = &[
     (Instrument::Erhu, "asian dreamz", 0, 4), // DSK Asian DreamZ (ERHU)
     (Instrument::Pipa, "asian dreamz", 0, 0), // DSK Asian DreamZ (PIPA)
     (Instrument::Guqin, "asian dreamz", 0, 3), // DSK Asian DreamZ (GUZHEN)
-    (Instrument::Konghou, "accurate", 32, 46), // ACCURATE_SF2 032-046 Harp
-    (Instrument::Fangxiang, "accurate", 32, 98), // ACCURATE_SF2 032-098 VibeBell
+    // Redistribution-friendly substitutes for the non-redistributable
+    // ACCURATE_SF2 (Konghou 32/46 Harp, Fangxiang 32/98 VibeBell):
+    (Instrument::Konghou, "concertharp", 0, 0), // FreePats Concert Harp (CC0)
+    (Instrument::Fangxiang, "xylophone", 0, 0), // FreePats Xylophone (CC0)
 ];
 
 /// Resolve the SoundFont + preset for an instrument:

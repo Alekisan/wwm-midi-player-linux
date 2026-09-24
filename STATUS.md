@@ -20,13 +20,18 @@ All four phases are **complete and working**, plus the audio-preview feature.
 | `player` | transport core + timing thread + Go Live gating | done |
 | `preview_synth` | rustysynth + rodio audio preview (5 instruments) | done |
 | `gui` | Qt6/QML front-end (cxx-qt 0.10) | done |
-| `cli` | `wwm` inspect/play/hotkeys subcommands | done |
+| `cli` | headless dev/diagnostic CLI (`wwm`: inspect/play/hotkeys); not shipped — see `CLI.md` | done |
 
 ### Build & run
 
-- `cargo build` / `cargo test --workspace` (all green; ~30 tests).
+- `cargo test --workspace` (all green; ~30 tests).
+- **Release ships one binary:** `cargo build --release -p wwm-gui` →
+  `./target/release/wwm-gui`. (`cargo build --release` builds the whole workspace
+  and also produces `wwm`.)
 - GUI: `cargo run -p wwm-gui` (or `./target/debug/wwm-gui`).
-- CLI: `./target/debug/wwm` (subcommands: `inspect`, `play`, `hotkeys`).
+- CLI (dev/diagnostic only, **not shipped**): `./target/debug/wwm` — `inspect`,
+  `play`, `hotkeys`. Global hotkeys are implemented only here (the GUI has none,
+  by design). Full reference: `CLI.md`.
 
 ### Key implementation notes
 
@@ -71,12 +76,18 @@ All four phases are **complete and working**, plus the audio-preview feature.
 
 ### SoundFonts
 
-- Project `soundfonts/` (binary, git-ignored): `FS_Erhu_v2.sf2` (erhu 8/110),
-  `MFA_Pipa.sf2` (pipa 32/105), `OLPC_Guzheng.sf2` (guzheng 1/107),
-  `DSK Asian DreamZ.SF2` (multi: erhu 0/4, pipa 0/0, guzheng 0/3),
-  `ACCURATE_SF2_AiX_CTX800.SF2` (Konghou 32/46 Harp, Fangxiang 32/98 VibeBell).
+- **Shipped** in `soundfonts/` (tracked; redistribution-friendly — see
+  `soundfonts/README.md`): `FS_Erhu_v2.sf2` (erhu 8/110), `MFA_Pipa.sf2`
+  (pipa 32/105), `OLPC_Guzheng.sf2` (guzheng 1/107), `ConcertHarp.sf2`
+  (Konghou, FreePats CC0, bank 0/patch 0), `Xylophone.sf2` (Fangxiang, FreePats
+  CC0, bank 0/patch 0).
+- **Not redistributed** (git-ignored, keep local): `ACCURATE_SF2_AiX_CTX800.SF2`
+  (all rights reserved) and `DSK Asian DreamZ.SF2` (DSK freeware). The CC0
+  FreePats fonts replace ACCURATE for Konghou/Fangxiang; DSK was only an optional
+  Guqin/Pipa/Erhu fallback.
 - `~/.local/share/where-winds-meet-player/soundfonts/FluidR3_GM.sf2` + `FluidR3_GS.sf2`
-  (installed from Arch `soundfont-fluid` package) = GM fallback.
+  (Arch `soundfont-fluid` package) = GM fallback if the user provides one. No GM
+  bank is bundled.
 
 ### uinput udev rule (auto-setup)
 
@@ -101,26 +112,26 @@ All four phases are **complete and working**, plus the audio-preview feature.
 | Guqin 古琴 | OLPC_Guzheng | 1/107 |
 | Pipa 琵琶 | MFA_Pipa | 32/105 |
 | Erhu 二胡 | FS_Erhu_v2 | 8/110 |
-| Konghou 箜篌 | ACCURATE_SF2_AiX_CTX800 | 32/46 (Harp) |
-| Fangxiang 方響 | ACCURATE_SF2_AiX_CTX800 | 32/98 (VibeBell) |
+| Konghou 箜篌 | FreePats Concert Harp | 0/0 (CC0) |
+| Fangxiang 方響 | FreePats Xylophone | 0/0 (CC0) |
 
 ## Open / deferred (future sessions)
 
-1. **Authentic Konghou + Fangxiang** soundfonts — **DONE**. Mapped against
-   `ACCURATE_SF2_AiX_CTX800.SF2`: Konghou → `032-046 Harp`, Fangxiang →
-   `032-098 VibeBell` (added to `SPECIFIC_FONTS` in `preview_synth/src/lib.rs`).
-   To make rustysynth load that font, `rustysynth` 1.3.6 is now **vendored** under
-   `vendor/rustysynth` and swapped in via `[patch.crates-io]` with two lenient
-   changes: (a) the INFO parser now *skips* unknown sub-chunks (including the
-   nested `LIST xdta` chunk this font embeds) instead of erroring on
-   `ListContainsUnknownId`; (b) `sanity_check` now *normalizes* degenerate loop
-   points — regions marked looping whose `start_loop >= end_loop` (a common
-   "no loop" convention this font uses) are forced to `NoLoop`, instead of
-   failing, so the oscillator plays the sample straight through. Verified by
-   `accurate_sf2_loads_konghou_and_fangxiang` (loads the font, selects bank/patch,
-   renders an audible C4). Note these patch choices are approximations (a Western
-   concert harp for 箜篌, a resonant metallophone for 方響); the `SPECIFIC_FONTS`
-   table is the place to retune them.
+1. **Authentic Konghou + Fangxiang** soundfonts — **DONE (redistribution-safe).**
+   The original `ACCURATE_SF2_AiX_CTX800.SF2` mapping (Konghou → `032-046 Harp`,
+   Fangxiang → `032-098 VibeBell`) could not be redistributed (all rights
+   reserved), so it was replaced with **CC0 FreePats** banks assembled from the
+   CC0 Versilian Community Sample Library: Konghou → FreePats Concert Harp,
+   Fangxiang → FreePats Xylophone (each a single preset at bank 0/patch 0; added
+   to `SPECIFIC_FONTS` in `preview_synth/src/lib.rs`). Verified by
+   `specific_fonts_load_konghou_and_fangxiang` (loads the font, selects the
+   preset, renders an audible C4). These are approximations (a concert harp for
+   箜篌, an orchestral xylophone for 方響); `SPECIFIC_FONTS` is the place to
+   retune. The vendored `rustysynth` lenient parser under `vendor/rustysynth`
+   (swapped in via `[patch.crates-io]`) is **retained but no longer required** for
+   the shipped fonts: (a) it skips unknown INFO sub-chunks instead of erroring on
+   `ListContainsUnknownId`; (b) `sanity_check` normalizes degenerate loop points
+   whose `start_loop >= end_loop` to `NoLoop`.
 2. **Octave collapse / tessitura centering** — **DONE**. The 21-key and 36-key
    layouts are both 3-octave grids (C3–B5), so wide-range pieces previously
    folded out-of-range octaves onto the boundary rows. Now `parse()` computes a
@@ -151,15 +162,15 @@ All four phases are **complete and working**, plus the audio-preview feature.
   `ssh oldalienware` (`HostName oldalienware.home.arpa`, `User maria`).
 - x86_64, **CachyOS/KDE**, `qt6-base 6.11.2` (same as the dev box), **no Rust
   toolchain** — so build locally and copy binaries over.
-- Deploy: `cargo build --release`, then
-  `scp target/release/wwm-gui target/release/wwm oldalienware:~/` plus
-  `scp -r soundfonts oldalienware:~/` for audio preview. Only **two** executables
-  exist (`wwm-gui`, `wwm`); libraries are compiled in, and a stale `wwm-cli`
-  sits in `target/debug/` (ignore it).
+- Deploy: `cargo build --release -p wwm-gui` (add `-p wwm-cli` if you also want the
+  diagnostic CLI there), then `scp target/release/wwm-gui oldalienware:~/`
+  (+ `wwm` if built) plus `scp -r soundfonts oldalienware:~/` for audio preview.
+  Libraries are compiled in.
 - As of the live-injection test, `oldalienware:~/` already has `wwm-gui`, `wwm`,
-  `soundfonts/` (all 5 SF2s), and a `test-scale.mid` smoke-test fixture. **The
-  deployed binaries predate the preview-checkbox removal**, so rebuild + re-copy
-  `wwm-gui` before relying on the latest behavior on that box.
+  `soundfonts/`, and a `test-scale.mid` smoke-test fixture. **Those binaries
+  predate the preview-checkbox removal and the CC0 soundfont swap**, so rebuild +
+  re-copy `wwm-gui` (and `soundfonts/`) before relying on the latest behavior
+  there.
 
 ## Git
 
