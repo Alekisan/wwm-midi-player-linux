@@ -156,6 +156,19 @@ All four phases are **complete and working**, plus the audio-preview feature.
    obvious keys `a s d f g h j q …`). Notably `/dev/uinput` was already writable by
    `maria` there (logind `uaccess` ACL), so no udev rule install was needed.
 
+## Release
+
+- Version is **1.0.0** (`[workspace.package] version` in `Cargo.toml`); changes are
+  tracked in `CHANGELOG.md`.
+- CI: `.github/workflows/ci.yml` runs `cargo fmt --all --check`,
+  `cargo test --workspace`, and `cargo clippy --workspace --all-targets -- -D warnings`
+  on push to `main` and on PRs (Qt installed via `jurplel/install-qt-action`).
+- Release: pushing a `v*` tag triggers `.github/workflows/release.yml`, which builds
+  `-p wwm-gui` and publishes `wwm-midi-player-linux-<ver>-x86_64.tar.gz` (binary +
+  `soundfonts/` + `LICENSE`/`README.md`/`CLI.md`) plus a `.sha256`.
+- Cutting a release: bump the version, update `CHANGELOG.md`, commit, then
+  `git tag vX.Y.Z && git push origin vX.Y.Z`.
+
 ## Test / deploy machine
 
 - **`oldalienware`** — the gaming box with WWM installed. SSH alias

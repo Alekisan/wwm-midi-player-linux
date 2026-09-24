@@ -34,8 +34,7 @@ pub const UDEV_RULE_PATH: &str = "/etc/udev/rules.d/99-wwm-uinput.rules";
 /// The `uaccess` tag makes systemd-logind grant read/write access on
 /// `/dev/uinput` to the user at the active seat — no `uinput` group membership
 /// or `sudo` needed, and it applies immediately without a re-login.
-pub const UDEV_RULE_CONTENT: &str =
-    "KERNEL==\"uinput\", SUBSYSTEM==\"misc\", TAG+=\"uaccess\"\n";
+pub const UDEV_RULE_CONTENT: &str = "KERNEL==\"uinput\", SUBSYSTEM==\"misc\", TAG+=\"uaccess\"\n";
 
 /// True when `/dev/uinput` can be opened for writing, i.e. input injection will
 /// work. This is the same check `VirtualKeyboard::create` performs implicitly.

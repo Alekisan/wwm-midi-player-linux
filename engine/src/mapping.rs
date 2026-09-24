@@ -224,7 +224,7 @@ mod tests {
     fn twenty_one_key_quantizes_accidentals_to_nearest_natural() {
         // C#4 (61) is equidistant from C4/D4; ties resolve to the lower natural.
         assert_eq!(note_to_key_21(61, 0), KeyChord::Key('a')); // C#4 -> C4
-        // A#4 (70) is nearer A4 (69) than B4 (71).
+                                                               // A#4 (70) is nearer A4 (69) than B4 (71).
         assert_eq!(note_to_key_21(70, 0), KeyChord::Key('h')); // A#4 -> A4
     }
 
@@ -232,7 +232,10 @@ mod tests {
     fn twenty_one_key_never_uses_modifiers() {
         for note in 0..=127 {
             let key = note_to_key_21(note, 0);
-            assert!(matches!(key, KeyChord::Key(_)), "note {note} produced {key}");
+            assert!(
+                matches!(key, KeyChord::Key(_)),
+                "note {note} produced {key}"
+            );
         }
     }
 

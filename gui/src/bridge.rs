@@ -536,7 +536,7 @@ impl qobject::PlayerBridge {
             .filter(|p| *p != removed)
             .collect();
         self.as_mut().set_selection_list(sel);
-        let in_queue = self.queue.borrow().iter().any(|p| *p == removed);
+        let in_queue = self.queue.borrow().contains(&removed);
         if in_queue {
             self.queue.borrow_mut().clear();
             self.queue_pos.set(0);
@@ -630,7 +630,7 @@ impl qobject::PlayerBridge {
         };
         let mut sel: Vec<String> = self.selection.iter().map(|q| q.to_string()).collect();
         if checked {
-            if !sel.iter().any(|p| *p == path) {
+            if !sel.contains(&path) {
                 sel.push(path);
             }
         } else {
@@ -886,7 +886,7 @@ mod tests {
         std::fs::write(dir.join("a.mid"), b"x").unwrap();
         std::fs::write(dir.join("b.midi"), b"x").unwrap();
         std::fs::write(dir.join("c.txt"), b"x").unwrap();
-        let paths = scan_dir_paths(&[dir.clone()]);
+        let paths = scan_dir_paths(std::slice::from_ref(&dir));
         assert_eq!(paths.len(), 2);
         let _ = std::fs::remove_dir_all(&dir);
     }

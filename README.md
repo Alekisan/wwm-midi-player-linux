@@ -1,5 +1,7 @@
 # wwm-midi-player-linux
 
+[![CI](https://github.com/Alekisan/wwm-midi-player-linux/actions/workflows/ci.yml/badge.svg)](https://github.com/Alekisan/wwm-midi-player-linux/actions/workflows/ci.yml)
+
 A native Linux MIDI music player for **[Where Winds Meet](https://store.steampowered.com/app/3564740)**.
 It parses `.mid` files, translates the notes onto the game's on-screen keyboard
 layout, and plays them into the game by injecting keystrokes through a virtual
@@ -47,6 +49,20 @@ A Cargo workspace of decoupled crates (see [`DESIGN.md`](DESIGN.md) and [`STATUS
 - Linux with **Qt 6** runtime (tested on CachyOS / KDE Plasma 6).
 - Rust (stable) with `cargo`, plus Qt6 development headers to build.
 - For input injection: write access to `/dev/uinput` (see [uinput setup](#uinput-setup)).
+
+## Install
+
+### From a release (Linux x86_64)
+
+Download `wwm-midi-player-linux-<version>-x86_64.tar.gz` from the
+[releases page](https://github.com/Alekisan/wwm-midi-player-linux/releases),
+extract it, and run `./wwm-gui`. The tarball bundles `soundfonts/` — keep it
+next to the binary. The Qt 6 runtime is required (Arch/CachyOS: `qt6-base
+qt6-declarative`; Debian/Ubuntu: the `libqt6*` runtime packages).
+
+### From source
+
+See [Build](#build) below.
 
 ## Build
 

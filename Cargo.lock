@@ -2130,7 +2130,7 @@ dependencies = [
 
 [[package]]
 name = "wwm-cli"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "clap",
  "futures-util",
@@ -2143,7 +2143,7 @@ dependencies = [
 
 [[package]]
 name = "wwm-engine"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "midly",
  "thiserror 2.0.20",
@@ -2151,7 +2151,7 @@ dependencies = [
 
 [[package]]
 name = "wwm-gui"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "cxx",
  "cxx-qt",
@@ -2166,7 +2166,7 @@ dependencies = [
 
 [[package]]
 name = "wwm-hotkeys"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "ashpd",
  "futures-util",
@@ -2176,7 +2176,7 @@ dependencies = [
 
 [[package]]
 name = "wwm-input"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "evdev",
  "thiserror 2.0.20",
@@ -2185,7 +2185,7 @@ dependencies = [
 
 [[package]]
 name = "wwm-player"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "wwm-engine",
  "wwm-input",
@@ -2194,7 +2194,7 @@ dependencies = [
 
 [[package]]
 name = "wwm-playlist"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -2202,7 +2202,7 @@ dependencies = [
 
 [[package]]
 name = "wwm-preview-synth"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "rodio",
  "rustysynth",
