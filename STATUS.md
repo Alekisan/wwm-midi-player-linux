@@ -168,6 +168,13 @@ All four phases are **complete and working**, plus the audio-preview feature.
   `soundfonts/` + `LICENSE`/`README.md`/`CLI.md`) plus a `.sha256`.
 - Cutting a release: bump the version, update `CHANGELOG.md`, commit, then
   `git tag vX.Y.Z && git push origin vX.Y.Z`.
+- **v1.0.0 published** (2026-09-24): https://github.com/Alekisan/wwm-midi-player-linux/releases/tag/v1.0.0
+  — asset `wwm-midi-player-linux-1.0.0-x86_64.tar.gz` (+ `.sha256`), verified
+  (5-font set only, no ACCURATE/DSK; binary links system Qt6 sonames).
+- CI gotchas: the runner needs `libasound2-dev` (rodio/alsa-sys) plus
+  `libgl1-mesa-dev`, `libudev-dev`, `libxkbcommon-dev`; Qt comes from
+  `jurplel/install-qt-action@v4` (6.8.1). The fine-grained GitHub PAT needs
+  **Workflows: write** to push `.github/workflows/`.
 
 ## Test / deploy machine
 
